@@ -364,6 +364,17 @@ const PAYMENT_STATUSES = [
 const PAYMENT_METHODS = {chuyen_khoan:'Chuyển khoản', cod:'COD', tien_mat:'Tiền mặt'};
 const CARRIERS = {shopee_express:'Shopee Express', viettel_post:'Viettel Post', grab_lalamove:'Grab/Lalamove', tu_lay:'Khách tự lấy hàng'};
 const COMP_TYPES = {hoan_tien:'Hoàn tiền', gui_hang_bu:'Gửi hàng bù'};
+const REFUND_STATUSES = [
+  {key:'cho_xac_nhan', label:'Chờ xác nhận', bg:'#FBEEDA', fg:'#946417'},
+  {key:'hoan_tat', label:'Hoàn tất', bg:'#E4F5EC', fg:'#177047'},
+  {key:'huy', label:'Hủy', bg:'#FCE7EA', fg:'#B5233A'},
+];
+const SHIP_COMP_STATUSES = [
+  {key:'cho_gui', label:'Chờ gửi', bg:'#FBEEDA', fg:'#946417'},
+  {key:'dang_giao', label:'Đang giao', bg:'#E9EFFD', fg:'#2C55C4'},
+  {key:'hoan_thanh', label:'Hoàn thành', bg:'#E4F5EC', fg:'#177047'},
+  {key:'huy', label:'Hủy', bg:'#FCE7EA', fg:'#B5233A'},
+];
 
 function statusMeta(key,list){ return list.find(s=>s.key===key) || list[0]; }
 function tagHtml(key,list){ const m=statusMeta(key,list); return `<span class="tag" style="background:${m.bg};color:${m.fg}">${m.label}</span>`; }
@@ -479,7 +490,7 @@ function renderDashboard(){
     </div>
     <div class="section-title">Khiếu nại / đền hàng gần đây</div>
     <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Sản phẩm</th><th>Hình thức</th></tr></thead><tbody>
-    ${openComplaints.length? openComplaints.map(c=>`<tr><td>${c.customerName}</td><td>${c.product}</td><td>${COMP_TYPES[c.compensationType]}</td></tr>`).join('') : `<tr><td colspan="3" class="empty">Chưa có khiếu nại nào</td></tr>`}
+    ${openComplaints.length? openComplaints.map(c=>`<tr><td>${c.customerName}</td><td>${complaintDescription(c)}</td><td>${COMP_TYPES[c.compensationType]}</td></tr>`).join('') : `<tr><td colspan="3" class="empty">Chưa có khiếu nại nào</td></tr>`}
     </tbody></table></div>
   `;
 }
@@ -1076,49 +1087,173 @@ function openOrderDetail(orderId){ openOrderModal(null, orderId); }
 
 /* ======================= COMPLAINTS ======================= */
 let complaintForm = null;
+let compUi = { typeFilter:'', statusFilter:'' };
+function complaintDescription(c){
+  if(c.compensationType==='hoan_tien') return 'Hoàn tiền'+(c.refundValue? ' — '+fmt(c.refundValue) : '');
+  return (c.items&&c.items.length? c.items.map(i=>i.name+' x'+i.qty).join(', ') : 'Gửi hàng bù');
+}
+const MERGED_COMP_STATUSES = (()=>{
+  const seen = {}; const out = [];
+  [...REFUND_STATUSES, ...SHIP_COMP_STATUSES].forEach(s=>{ if(!seen[s.key]){ seen[s.key]=true; out.push(s); } });
+  return out;
+})();
+function complaintStatusKey(c){ return c.compensationType==='hoan_tien' ? c.statusRefund : c.statusShip; }
 function renderComplaints(){
-  const list = [...DB.complaints].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const list = [...DB.complaints]
+    .filter(c=> (!compUi.typeFilter || c.compensationType===compUi.typeFilter)
+             && (!compUi.statusFilter || complaintStatusKey(c)===compUi.statusFilter))
+    .sort((a,b)=>new Date(b.updatedAt||b.createdAt||b.date)-new Date(a.updatedAt||a.createdAt||a.date));
   document.getElementById('content').innerHTML = `
-    <div class="table-wrap"><table><thead><tr>
-      <th>Ngày</th><th>Khách hàng</th><th>SĐT</th><th>Địa chỉ</th><th>Sản phẩm</th><th>SL</th><th>Hình thức đền</th><th>Lý do</th><th></th>
+    <div class="search-bar">
+      <select class="inline-select" style="max-width:170px" onchange="compUi.typeFilter=this.value; renderComplaints()">
+        <option value="">Tất cả hình thức đền</option>
+        ${Object.entries(COMP_TYPES).map(([k,v])=>`<option value="${k}" ${compUi.typeFilter===k?'selected':''}>${v}</option>`).join('')}
+      </select>
+      <select class="inline-select" style="max-width:180px" onchange="compUi.statusFilter=this.value; renderComplaints()">
+        <option value="">Tất cả trạng thái</option>
+        ${MERGED_COMP_STATUSES.map(s=>`<option value="${s.key}" ${compUi.statusFilter===s.key?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+      ${(compUi.typeFilter||compUi.statusFilter)? `<button class="btn btn-secondary btn-sm" onclick="compUi.typeFilter='';compUi.statusFilter=''; renderComplaints()">✕ Xóa lọc</button>`:''}
+      <span class="muted small">${list.length} khiếu nại/đền hàng</span>
+    </div>
+    <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
+      <col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:7%">
+    </colgroup><thead><tr>
+      <th>Mã hàng bù</th><th>Khách hàng</th><th>Mô tả</th><th>Tổng giá trị bù</th><th>Ngày tạo</th><th>Cập nhật lần cuối</th><th>Hoàn tiền</th><th>Gửi hàng bù</th><th></th>
     </tr></thead><tbody>
     ${list.length? list.map(c=>`
       <tr>
-        <td class="small">${fmtDate(c.date)}</td>
-        <td>${c.customerName}</td><td>${c.phone}</td>
-        <td class="small">${c.address}</td>
-        <td>${c.product}</td><td>${c.qty}</td>
-        <td><span class="tag" style="background:${c.compensationType==='hoan_tien'?'var(--blue-light)':'var(--amber-light)'};color:${c.compensationType==='hoan_tien'?'var(--blue)':'#946417'}">${COMP_TYPES[c.compensationType]}</span></td>
-        <td class="small">${complaintReasonText(c)}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')">Chi tiết</button>
+        <td><b>${c.code}</b></td>
+        <td>${c.customerName}<br><span class="muted small">${c.phone}</span></td>
+        <td class="small">${complaintDescription(c)}</td>
+        <td style="font-weight:700">${fmt(c.refundValue||0)}</td>
+        <td class="small">${fmtDate(c.createdAt)}</td>
+        <td class="small">${fmtDate(c.updatedAt||c.createdAt)}</td>
+        <td>${c.compensationType==='hoan_tien'? selectHtml(c.id, c.statusRefund, REFUND_STATUSES, 'updateComplaintRefundStatus') : '<span class="muted small">—</span>'}</td>
+        <td>${c.compensationType==='gui_hang_bu'? selectHtml(c.id, c.statusShip, SHIP_COMP_STATUSES, 'updateComplaintShipStatus') : '<span class="muted small">—</span>'}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')">Chi tiết</button></td>
       </tr>`).join('') : `<tr><td colspan="9" class="empty">Chưa có khiếu nại/đền hàng nào</td></tr>`}
     </tbody></table></div>
   `;
 }
+function updateComplaintRefundStatus(id, val){
+  const c = DB.complaints.find(x=>x.id===id); if(!c) return;
+  c.statusRefund = val; c.updatedAt = todayISO();
+  saveDB(); renderComplaints();
+}
+function updateComplaintShipStatus(id, val){
+  const c = DB.complaints.find(x=>x.id===id); if(!c) return;
+  c.statusShip = val; c.updatedAt = todayISO();
+  saveDB(); renderComplaints();
+}
 function openComplaintModal(){
-  complaintForm = {id:null, date:todayISO(), customerName:'', phone:'', address:'', product:'', qty:1,
-    compensationType:'hoan_tien', carrier:'', shipFee:0, shipPayer:'shop', reasonType:'loi_san_pham', reasonOther:'', note:'', refundValue:0};
+  complaintForm = {id:null, orderId:'', customerName:'', phone:'', address:'', items:[],
+    compensationType:'hoan_tien', refundValue:0,
+    carrier:'', trackingCode:'', shipFee:0, shipPayer:'shop', statusShip:'cho_gui', statusRefund:'cho_xac_nhan',
+    reasonType:'loi_san_pham', reasonOther:'', note:'', createdAt: todayISO(), updatedAt: todayISO()};
   openModal(complaintFormHtml(), true);
+}
+function showOrderSuggestions(query){
+  const box = document.getElementById('orderSuggestBox');
+  if(!box) return;
+  const q = (query||'').trim().toLowerCase();
+  if(!q){ box.innerHTML=''; return; }
+  const matches = DB.orders.filter(o=>(o.code+' '+o.customerName+' '+o.phone).toLowerCase().includes(q)).slice(0,8);
+  if(matches.length===0){ box.innerHTML = `<div style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.12);z-index:30;padding:8px 10px;font-size:12px;color:var(--muted);margin-top:2px">Không tìm thấy đơn hàng</div>`; return; }
+  box.innerHTML = `<div style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.12);z-index:30;max-height:200px;overflow-y:auto;overflow-x:hidden;margin-top:2px">
+    ${matches.map(o=>`<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #F0F1F5;font-size:12.5px" onmousedown="selectOrderForComplaint('${o.id}')">
+      <b>${o.code}</b> — ${o.customerName}<div class="muted small">${o.phone} — ${o.items.map(i=>i.name+' x'+i.qty).join(', ')}</div>
+    </div>`).join('')}
+  </div>`;
+}
+function hideOrderSuggestions(){ const box = document.getElementById('orderSuggestBox'); if(box) box.innerHTML=''; }
+function selectOrderForComplaint(orderId){
+  const o = DB.orders.find(x=>x.id===orderId);
+  if(!o) return;
+  complaintForm.orderId = o.id;
+  complaintForm.customerName = o.customerName;
+  complaintForm.phone = o.phone;
+  complaintForm.address = o.address;
+  complaintForm.items = o.items.map(it=>({productId:it.productId, name:it.name, qty:it.qty}));
+  refreshComplaintForm();
+}
+function clearOrderLink(){
+  complaintForm.orderId = '';
+  refreshComplaintForm();
+}
+function complaintItemRowsHtml(){
+  const f = complaintForm;
+  if(f.items.length===0) return `<div class="muted small" style="margin-bottom:8px">Chưa có sản phẩm nào</div>`;
+  return f.items.map((it,idx)=>{
+    const p = DB.products.find(x=>x.id===it.productId);
+    return `<div class="item-row" style="grid-template-columns:2.4fr 1fr auto" data-idx="${idx}">
+      <div style="position:relative">
+        <input type="text" value="${p? p.name : ''}" placeholder="Gõ tên sản phẩm để tìm..." autocomplete="off"
+          oninput="showCompProductSuggestions(${idx}, this.value)"
+          onfocus="showCompProductSuggestions(${idx}, this.value)"
+          onblur="setTimeout(()=>hideCompProductSuggestions(${idx}),150)">
+        <div id="compProdSuggest_${idx}"></div>
+      </div>
+      <div><input type="number" min="1" value="${it.qty}" oninput="complaintForm.items[${idx}].qty=Number(this.value)||0"></div>
+      <div><button class="rm-item" onclick="complaintForm.items.splice(${idx},1); refreshComplaintForm()">✕</button></div>
+    </div>`;
+  }).join('');
+}
+function showCompProductSuggestions(idx, query){
+  const box = document.getElementById('compProdSuggest_'+idx);
+  if(!box) return;
+  const q = (query||'').trim().toLowerCase();
+  const matches = DB.products.filter(p=>(p.name+' '+p.code).toLowerCase().includes(q)).slice(0,8);
+  if(matches.length===0){ box.innerHTML = q? `<div style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.12);z-index:30;padding:8px 10px;font-size:12px;color:var(--muted);margin-top:2px">Không tìm thấy sản phẩm</div>` : ''; return; }
+  box.innerHTML = `<div style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.12);z-index:30;max-height:200px;overflow-y:auto;overflow-x:hidden;margin-top:2px">
+    ${matches.map(p=>`<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #F0F1F5;font-size:12.5px" onmousedown="selectCompProductForItem(${idx}, '${p.id}')">
+      <b>${p.name}</b><div class="muted small">${p.code} — Tồn: ${p.stock}</div>
+    </div>`).join('')}
+  </div>`;
+}
+function hideCompProductSuggestions(idx){ const box = document.getElementById('compProdSuggest_'+idx); if(box) box.innerHTML=''; }
+function selectCompProductForItem(idx, productId){
+  const p = DB.products.find(x=>x.id===productId);
+  complaintForm.items[idx].productId = productId;
+  complaintForm.items[idx].name = p? p.name : '';
+  refreshComplaintForm();
+}
+function addComplaintItem(){
+  complaintForm.items.push({productId:'', name:'', qty:1});
+  refreshComplaintForm();
+  const rows = document.querySelectorAll('#compItemRows .item-row');
+  if(rows.length) rows[rows.length-1].scrollIntoView({block:'center', behavior:'smooth'});
 }
 function complaintFormHtml(){
   const f = complaintForm;
+  const linkedOrder = f.orderId? DB.orders.find(x=>x.id===f.orderId) : null;
   return `
     <div class="modal-head"><h3>Tạo khiếu nại / đền hàng</h3><button class="close-x" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
+      <div class="form-row" style="position:relative">
+        <label>Mã đơn hàng gốc</label>
+        ${linkedOrder? `
+          <div style="display:flex;align-items:center;gap:8px;background:var(--teal-light);border-radius:8px;padding:9px 11px">
+            <span style="flex:1"><b>${linkedOrder.code}</b> — ${linkedOrder.customerName} (${linkedOrder.phone})</span>
+            <button class="btn btn-secondary btn-sm" onclick="clearOrderLink()">Đổi đơn khác</button>
+          </div>` : `
+          <input type="text" placeholder="Gõ mã đơn / tên khách / SĐT để tìm đơn gốc..." autocomplete="off"
+            oninput="showOrderSuggestions(this.value)" onfocus="showOrderSuggestions(this.value)" onblur="setTimeout(hideOrderSuggestions,150)">
+          <div id="orderSuggestBox"></div>
+          <div class="hint">Không bắt buộc — có thể bỏ trống nếu không gắn với đơn hàng cụ thể</div>`}
+      </div>
       <div class="form-2col">
         <div class="form-row"><label>Khách hàng</label><input value="${f.customerName}" oninput="complaintForm.customerName=this.value"></div>
         <div class="form-row"><label>SĐT</label><input value="${f.phone}" oninput="complaintForm.phone=this.value"></div>
       </div>
       <div class="form-row"><label>Địa chỉ</label><input value="${f.address}" oninput="complaintForm.address=this.value"></div>
-      <div class="form-2col">
-        <div class="form-row"><label>Sản phẩm</label>
-          <select onchange="complaintForm.product=this.value">
-            <option value="">-- Chọn sản phẩm --</option>
-            ${DB.products.map(p=>`<option value="${p.name}" ${f.product===p.name?'selected':''}>${p.name}</option>`).join('')}
-          </select>
-        </div>
-        <div class="form-row"><label>Số lượng</label><input type="number" value="${f.qty}" oninput="complaintForm.qty=Number(this.value)||1"></div>
+
+      <div class="form-row">
+        <label>Sản phẩm</label>
+        <div id="compItemRows">${complaintItemRowsHtml()}</div>
+        <button class="btn btn-secondary btn-sm" onclick="addComplaintItem()">+ Thêm sản phẩm</button>
       </div>
+
       <div class="form-row"><label>Hình thức đền</label>
         <select onchange="complaintForm.compensationType=this.value; refreshComplaintForm()">
           <option value="hoan_tien" ${f.compensationType==='hoan_tien'?'selected':''}>Hoàn tiền</option>
@@ -1126,22 +1261,38 @@ function complaintFormHtml(){
         </select>
       </div>
       <div class="form-row"><label>Giá trị hoàn / đền (nếu có)</label><input type="number" value="${f.refundValue}" oninput="complaintForm.refundValue=Number(this.value)||0"></div>
+
       ${f.compensationType==='gui_hang_bu'? `
       <div class="form-2col">
         <div class="form-row"><label>Hình thức vận chuyển</label>
-          <select onchange="complaintForm.carrier=this.value">
+          <select onchange="complaintForm.carrier=this.value; refreshComplaintForm()">
             <option value="">-- Không có --</option>
             ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${f.carrier===k?'selected':''}>${v}</option>`).join('')}
           </select>
         </div>
         <div class="form-row"><label>Phí ship</label><input type="number" value="${f.shipFee}" oninput="complaintForm.shipFee=Number(this.value)||0"></div>
       </div>
-      <div class="form-row"><label>Ai trả phí ship</label>
-        <select onchange="complaintForm.shipPayer=this.value">
-          <option value="shop" ${f.shipPayer==='shop'?'selected':''}>Shop trả</option>
-          <option value="khach" ${f.shipPayer==='khach'?'selected':''}>Khách trả</option>
+      ${(f.carrier==='shopee_express'||f.carrier==='viettel_post')? `
+      <div class="form-row"><label>Mã vận đơn</label><input value="${f.trackingCode}" oninput="complaintForm.trackingCode=this.value" placeholder="Nhập mã vận đơn"></div>`:''}
+      <div class="form-2col">
+        <div class="form-row"><label>Người chịu phí ship</label>
+          <select onchange="complaintForm.shipPayer=this.value">
+            <option value="shop" ${f.shipPayer==='shop'?'selected':''}>Shop trả</option>
+            <option value="khach" ${f.shipPayer==='khach'?'selected':''}>Khách trả</option>
+          </select>
+        </div>
+        <div class="form-row"><label>Trạng thái</label>
+          <select onchange="complaintForm.statusShip=this.value">
+            ${SHIP_COMP_STATUSES.map(s=>`<option value="${s.key}" ${f.statusShip===s.key?'selected':''}>${s.label}</option>`).join('')}
+          </select>
+        </div>
+      </div>` : `
+      <div class="form-row"><label>Trạng thái</label>
+        <select onchange="complaintForm.statusRefund=this.value">
+          ${REFUND_STATUSES.map(s=>`<option value="${s.key}" ${f.statusRefund===s.key?'selected':''}>${s.label}</option>`).join('')}
         </select>
-      </div>`:''}
+      </div>`}
+
       <div class="form-row"><label>Lý do</label>
         <select onchange="complaintForm.reasonType=this.value; refreshComplaintForm()">
           <option value="loi_san_pham" ${f.reasonType==='loi_san_pham'?'selected':''}>Lỗi sản phẩm</option>
@@ -1156,25 +1307,38 @@ function complaintFormHtml(){
   `;
 }
 const REASON_LABELS = {loi_san_pham:'Lỗi sản phẩm', loi_van_chuyen:'Lỗi vận chuyển', khac:'Khác'};
-function complaintReasonText(c){ return c.reasonType==='khac' ? (c.reasonOther||'Khác') : REASON_LABELS[c.reasonType]||c.reason||''; }
-function refreshComplaintForm(){ document.getElementById('modalRoot').querySelector('.modal').innerHTML = complaintFormHtml(); }
+function complaintReasonText(c){ return c.reasonType==='khac' ? (c.reasonOther||'Khác') : REASON_LABELS[c.reasonType]||''; }
+function refreshComplaintForm(){
+  const modalBody = document.querySelector('#modalRoot .modal-body');
+  const scrollPos = modalBody? modalBody.scrollTop : 0;
+  document.getElementById('modalRoot').querySelector('.modal').innerHTML = complaintFormHtml();
+  const newBody = document.querySelector('#modalRoot .modal-body');
+  if(newBody) newBody.scrollTop = scrollPos;
+}
 function saveComplaint(){
   const f = complaintForm;
-  if(!f.customerName.trim()){ alert('Vui lòng nhập tên khách hàng'); return; }
-  f.id = uid(); f.code = genCode('KN','complaint',5);
+  if(!f.customerName.trim() || !f.phone.trim()){ alert('Vui lòng nhập tên khách hàng và số điện thoại'); return; }
+  f.items = f.items.filter(it=>it.productId && it.qty>0);
+  f.id = uid(); f.code = genCode('HB','complaint',5);
+  f.updatedAt = todayISO();
   DB.complaints.push(f);
   saveDB(); closeModal(); complaintForm=null; renderComplaints();
 }
 function viewComplaint(id){
   const c = DB.complaints.find(x=>x.id===id);
+  const linkedOrder = c.orderId? DB.orders.find(x=>x.id===c.orderId) : null;
   openModal(`
-    <div class="modal-head"><h3>Chi tiết khiếu nại — ${c.code||''}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-head"><h3>Chi tiết hàng bù — ${c.code||''}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
+      ${linkedOrder? `<p><b>Đơn hàng gốc:</b> ${linkedOrder.code}</p>` : ''}
       <p><b>Khách hàng:</b> ${c.customerName} — ${c.phone}</p>
       <p><b>Địa chỉ:</b> ${c.address}</p>
-      <p><b>Sản phẩm:</b> ${c.product} x${c.qty}</p>
+      <p><b>Sản phẩm:</b> ${(c.items&&c.items.length)? c.items.map(i=>i.name+' x'+i.qty).join(', ') : '—'}</p>
       <p><b>Hình thức đền:</b> ${COMP_TYPES[c.compensationType]} ${c.refundValue?'— '+fmt(c.refundValue):''}</p>
-      ${c.carrier? `<p><b>Vận chuyển:</b> ${CARRIERS[c.carrier]} — Phí ship ${fmt(c.shipFee)} (${c.shipPayer==='shop'?'Shop trả':'Khách trả'})</p>`:''}
+      ${c.compensationType==='gui_hang_bu'? `
+        <p><b>Vận chuyển:</b> ${c.carrier? CARRIERS[c.carrier] : '—'} ${c.trackingCode? '— Mã: '+c.trackingCode : ''} — Phí ship ${fmt(c.shipFee)} (${c.shipPayer==='shop'?'Shop trả':'Khách trả'})</p>
+        <p><b>Trạng thái:</b> ${tagHtml(c.statusShip, SHIP_COMP_STATUSES)}</p>
+      ` : `<p><b>Trạng thái:</b> ${tagHtml(c.statusRefund, REFUND_STATUSES)}</p>`}
       <p><b>Lý do:</b> ${complaintReasonText(c)||'—'}</p>
       <p><b>Ghi chú:</b> ${c.note||'—'}</p>
     </div>
