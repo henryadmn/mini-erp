@@ -240,8 +240,9 @@ async function handleGoogleTokenResponse(resp){
     }, 20000);
   }
 }
-async function sheetsApiFetch(method, body){
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetConfig.spreadsheetId}/values/Data!A1${method==='PUT'?'?valueInputOption=RAW':''}`;
+async function sheetsApiFetch(method, body, range){
+  range = range || 'Data!A1:A400';
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetConfig.spreadsheetId}/values/${encodeURIComponent(range)}${method==='PUT'?'?valueInputOption=RAW':''}`;
   const res = await fetch(url, {
     method,
     headers: { 'Authorization': 'Bearer '+gAccessToken, 'Content-Type': 'application/json' },
@@ -258,15 +259,50 @@ async function sheetsApiFetch(method, body){
   }
   return res.json();
 }
+// Mỗi ô chỉ chứa tối đa ~45.000 ký tự (an toàn dưới giới hạn 50.000 của Google Sheets).
+// Dữ liệu được chia nhỏ và ghi vào nhiều ô liên tiếp trong cột A, chia theo khối cố định cho từng loại dữ liệu.
+const CHUNK_SIZE = 45000;
+const SHEET_BLOCKS = { products:{start:0, size:60}, orders:{start:60, size:120}, complaints:{start:180, size:40}, seq:{start:220, size:2} };
+const SHEET_TOTAL_ROWS = 222;
+function chunkString(str, size){
+  const chunks = [];
+  for(let i=0;i<str.length;i+=size) chunks.push(str.slice(i,i+size));
+  return chunks.length? chunks : [''];
+}
 async function loadDBFromSheet(){
   try{
-    const data = await sheetsApiFetch('GET');
-    const raw = data.values && data.values[0] && data.values[0][0];
-    if(raw){
-      DB = JSON.parse(raw);
-    } else {
+    const data = await sheetsApiFetch('GET', null, `Data!A1:A${SHEET_TOTAL_ROWS}`);
+    const rows = (data.values||[]).map(r=>(r&&r[0])||'');
+    while(rows.length<SHEET_TOTAL_ROWS) rows.push('');
+    const isEmpty = rows.every(r=>r==='');
+    if(isEmpty){
       await saveDBToSheet(); // initialize empty sheet with current local DB
+      return;
     }
+    // Nhận diện & chuyển đổi dữ liệu cũ (toàn bộ DB nhét trong 1 ô A1) sang định dạng chia nhỏ mới, tránh mất dữ liệu
+    if(rows[0]){
+      try{
+        const legacy = JSON.parse(rows[0]);
+        if(legacy && Array.isArray(legacy.products) && Array.isArray(legacy.orders)){
+          DB.products = legacy.products; DB.orders = legacy.orders;
+          DB.complaints = legacy.complaints||[]; DB.seq = legacy.seq||{product:0, order:0, complaint:0};
+          await saveDBToSheet(); // ghi lại theo định dạng mới
+          return;
+        }
+      }catch(e){ /* không phải định dạng cũ, đọc bình thường theo khối bên dưới */ }
+    }
+    const readBlock = (key)=>{
+      const b = SHEET_BLOCKS[key];
+      return rows.slice(b.start, b.start+b.size).join('');
+    };
+    const productsStr = readBlock('products');
+    const ordersStr = readBlock('orders');
+    const complaintsStr = readBlock('complaints');
+    const seqStr = readBlock('seq');
+    DB.products = productsStr? JSON.parse(productsStr) : [];
+    DB.orders = ordersStr? JSON.parse(ordersStr) : [];
+    DB.complaints = complaintsStr? JSON.parse(complaintsStr) : [];
+    DB.seq = seqStr? JSON.parse(seqStr) : {product:0, order:0, complaint:0};
   }catch(e){
     console.error(e);
     alert('Không đọc được dữ liệu từ Google Sheet. Kiểm tra: Spreadsheet ID đúng chưa, tab tên "Data" đã tạo chưa, tài khoản đã được chia sẻ quyền Editor chưa.\n\nChi tiết: '+e.message);
@@ -274,7 +310,20 @@ async function loadDBFromSheet(){
 }
 async function saveDBToSheet(){
   try{
-    await sheetsApiFetch('PUT', { values:[[JSON.stringify(DB)]] });
+    const values = new Array(SHEET_TOTAL_ROWS).fill(['']);
+    const writeBlock = (key, str)=>{
+      const b = SHEET_BLOCKS[key];
+      const chunks = chunkString(str, CHUNK_SIZE);
+      if(chunks.length>b.size){
+        throw new Error(`Dữ liệu "${key}" đã quá lớn (vượt quá dung lượng dự trù). Báo cho người hỗ trợ để mở rộng thêm chỗ chứa.`);
+      }
+      chunks.forEach((c,i)=>{ values[b.start+i] = [c]; });
+    };
+    writeBlock('products', JSON.stringify(DB.products));
+    writeBlock('orders', JSON.stringify(DB.orders));
+    writeBlock('complaints', JSON.stringify(DB.complaints));
+    writeBlock('seq', JSON.stringify(DB.seq));
+    await sheetsApiFetch('PUT', { values }, `Data!A1:A${SHEET_TOTAL_ROWS}`);
   }catch(e){
     console.error(e);
     alert('Không lưu được dữ liệu lên Google Sheet.\n\nChi tiết: '+e.message);
