@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini ERP - Quản lý bán hàng</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{
+  --navy:#12203C; --navy-2:#1B2E52; --teal:#0E9C97; --teal-light:#E3F6F5;
+  --amber:#E8A33D; --amber-light:#FBEEDA; --green:#1E8E5A; --green-light:#E4F5EC;
+  --red:#D6455A; --red-light:#FCE7EA; --blue:#3B6FE8; --blue-light:#E9EFFD;
+  --bg:#F4F6FA; --surface:#FFFFFF; --border:#E3E7EF; --text:#1B2233; --muted:#6B7386; --radius:10px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;max-width:100%;overflow-x:hidden;}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);}
+h1,h2,h3,.display{font-family:'Manrope',sans-serif;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;font-size:13.5px;max-width:100%;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#C7CDDB;border-radius:8px;}
+
+#app{display:flex;min-height:100vh;max-width:100%;overflow-x:hidden;}
+
+/* SIDEBAR */
+.sidebar{width:210px;flex-shrink:0;background:linear-gradient(180deg,var(--navy) 0%, var(--navy-2) 100%);color:#fff;display:flex;flex-direction:column;padding:18px 0;}
+.brand{padding:0 20px 16px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:10px;}
+.brand .logo{font-family:'Manrope',sans-serif;font-weight:800;font-size:18px;}
+.brand .sub{font-size:11px;color:rgba(255,255,255,.55);margin-top:3px;}
+.nav-item{display:flex;align-items:center;gap:9px;padding:11px 20px;color:rgba(255,255,255,.75);font-size:13.5px;font-weight:600;cursor:pointer;border-left:3px solid transparent;transition:.15s;}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff;}
+.nav-item.active{background:rgba(255,255,255,.1);color:#fff;border-left-color:var(--teal);}
+.nav-item .ic{width:16px;text-align:center;font-size:14px;flex-shrink:0;}
+.nav-item span:not(.ic):not(.nav-badge){overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;flex-shrink:0;}
+.sidebar-footer{margin-top:auto;padding:14px 20px 0;border-top:1px solid rgba(255,255,255,.1);}
+.sb-btn{display:block;width:100%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:8px 8px;border-radius:8px;font-size:11.5px;margin-top:8px;text-align:left;}
+.sb-btn:hover{background:rgba(255,255,255,.16);}
+
+/* MAIN */
+.main{flex:1;min-width:0;max-width:100%;overflow-x:hidden;}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 22px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:5;}
+.topbar h1{font-size:18px;margin:0;font-weight:800;}
+.topbar .meta{font-size:12px;color:var(--muted);margin-top:2px;}
+.topbar-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.content{padding:20px 22px 60px;max-width:100%;overflow-x:hidden;}
+
+/* GRID / CARDS */
+.grid{display:grid;gap:14px;}
+.grid-kpi{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));}
+.grid-2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr));}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;min-width:0;}
+.kpi .label{font-size:12px;color:var(--muted);font-weight:600;}
+.kpi .value{font-family:'Manrope',sans-serif;font-size:23px;font-weight:800;margin-top:5px;word-break:break-word;}
+.kpi .foot{font-size:11px;margin-top:5px;color:var(--muted);}
+.kpi.accent-teal .value{color:var(--teal);}
+.kpi.accent-amber .value{color:var(--amber);}
+.kpi.accent-green .value{color:var(--green);}
+.kpi.accent-red .value{color:var(--red);}
+
+.section-title{font-size:14.5px;font-weight:800;margin:24px 0 10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;}
+.section-title .hint{font-size:11.5px;color:var(--muted);font-weight:500;}
+
+/* BUTTONS */
+.btn{border:none;border-radius:8px;padding:9px 13px;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.btn-primary{background:var(--teal);color:#fff;} .btn-primary:hover{background:#0b847f;}
+.btn-secondary{background:var(--surface);color:var(--text);border:1px solid var(--border);} .btn-secondary:hover{background:#F0F2F7;}
+.btn-amber{background:var(--amber);color:#fff;}
+.btn-danger{background:var(--red-light);color:var(--red);}
+.btn-sm{padding:5px 9px;font-size:11.5px;border-radius:6px;}
+.btn-ghost{background:transparent;color:var(--teal);padding:4px 6px;}
+
+/* TABLE - no horizontal scroll, wraps instead */
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+table{border-collapse:collapse;width:100%;table-layout:auto;font-size:12.5px;}
+th{text-align:left;padding:10px 10px;background:#F8F9FC;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.2px;border-bottom:1px solid var(--border);}
+td{padding:9px 10px;border-bottom:1px solid #F0F1F5;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#FAFBFD;}
+.tag{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap;}
+.muted{color:var(--muted);}
+.small{font-size:11px;}
+.search-bar{display:flex;gap:9px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
+.search-bar input[type=text]{padding:9px 12px;border:1px solid var(--border);border-radius:8px;flex:1;min-width:180px;max-width:320px;}
+select.inline-select{padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px;font-weight:600;max-width:150px;}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(15,20,35,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 14px;overflow:auto;z-index:50;}
+.modal{background:#fff;border-radius:14px;max-width:640px;width:100%;overflow:hidden;}
+.modal-head{padding:16px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.modal-head h3{margin:0;font-size:16px;}
+.modal-body{padding:18px 22px;max-height:68vh;overflow-y:auto;overflow-x:hidden;}
+.modal-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;}
+.close-x{background:none;border:none;font-size:18px;color:var(--muted);}
+.form-row{margin-bottom:13px;}
+.form-row label{display:block;font-size:12px;font-weight:700;margin-bottom:5px;color:#33394C;}
+.form-row input,.form-row select,.form-row textarea{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:#FCFCFE;}
+.form-row .hint{font-size:11px;color:var(--muted);margin-top:4px;}
+.form-2col{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.item-row{display:grid;grid-template-columns:2.1fr 0.8fr 1fr auto;gap:7px;align-items:start;background:#F8F9FC;padding:8px;border-radius:8px;margin-bottom:7px;}
+.item-row select,.item-row input{width:100%;}
+.item-row .stock-note{font-size:10px;color:var(--muted);margin-top:2px;}
+.rm-item{background:var(--red-light);color:var(--red);border:none;border-radius:6px;width:28px;height:34px;}
+.totalbox{background:var(--teal-light);border-radius:8px;padding:11px 13px;display:flex;justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px;}
+.totalbox b{font-size:15px;color:var(--teal);}
+.type-label{display:inline-block;background:var(--teal-light);color:var(--teal);font-weight:800;padding:6px 12px;border-radius:8px;font-size:12.5px;}
+.banner{background:var(--amber-light);border:1px solid #F0D9AE;color:#7A5615;padding:10px 13px;border-radius:9px;font-size:12.5px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+.empty{text-align:center;padding:36px;color:var(--muted);font-size:12.5px;}
+.bars{display:flex;align-items:flex-end;gap:5px;height:130px;margin-top:10px;overflow:hidden;}
+.bar{flex:1;background:var(--teal);border-radius:4px 4px 0 0;position:relative;min-height:2px;}
+.bar span{position:absolute;top:-17px;left:0;right:0;text-align:center;font-size:9.5px;color:var(--muted);}
+.bar-label{font-size:9.5px;color:var(--muted);text-align:center;margin-top:4px;flex:1;}
+.hist-list{max-height:220px;overflow-y:auto;overflow-x:hidden;}
+.hist-item{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #F0F1F5;font-size:12px;gap:8px;}
+.trend-up{color:var(--green);font-weight:700;}
+.trend-down{color:var(--red);font-weight:700;}
+.trend-flat{color:var(--muted);font-weight:700;}
+.progress-bg{background:#EDEFF4;border-radius:6px;height:6px;overflow:hidden;margin-top:5px;}
+.progress-fill{background:var(--teal);height:100%;}
+@media(max-width:640px){
+  .sidebar{width:60px;}
+  .brand .sub, .nav-item span:not(.ic):not(.nav-badge){display:none;}
+  .nav-item{justify-content:center;padding:11px 6px;}
+  .sidebar-footer{padding:14px 6px 0;}
+  .sb-btn{font-size:0;padding:8px;} .sb-btn::first-letter{font-size:14px;}
+  .form-2col{grid-template-columns:1fr;}
+  .item-row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="sidebar">
+    <div class="brand"><div class="logo">🛒 MiniERP</div><div class="sub">Quản lý bán hàng</div></div>
+    <div id="navMenu"></div>
+    <div class="sidebar-footer">
+      <button class="sb-btn" id="sheetStatusBtn" onclick="openSheetSettings()">🔗 Google Sheets: chưa kết nối</button>
+      <button class="sb-btn" onclick="exportBackup()">⬇ Sao lưu dữ liệu</button>
+      <button class="sb-btn" onclick="document.getElementById('backupFile').click()">⬆ Phục hồi dữ liệu</button>
+      <input type="file" id="backupFile" style="display:none" accept="application/json" onchange="importBackup(this.files[0])">
+    </div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div><h1 id="pageTitle">Tổng quan</h1><div class="meta" id="pageMeta"></div></div>
+      <div class="topbar-actions" id="topbarActions"></div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<div id="modalRoot"></div>
+
+<script>
+/* ======================= DATA LAYER ======================= */
+const SHEET_CONFIG_KEY = 'erp_sheet_config';
+const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+let DB = { products: [], orders: [], complaints: [], seq:{product:0, order:0, complaint:0} };
+let activeTab = 'dashboard';
+let inv = { search:'' };
+let ordUi = { search:'' };
+let sheetConfig = { clientId:'', spreadsheetId:'' };
+let gTokenClient = null;
+let gAccessToken = null;
+let gConnected = false;
+let gPollTimer = null;
+
+/* ---- Google Sheets sync layer ---- */
+async function loadSheetConfig(){
+  try{ const raw = localStorage.getItem(SHEET_CONFIG_KEY); if(raw) sheetConfig = JSON.parse(raw); }
+  catch(e){ /* not configured yet */ }
+  updateSheetStatusUI();
+}
+async function saveSheetConfig(){
+  try{ localStorage.setItem(SHEET_CONFIG_KEY, JSON.stringify(sheetConfig)); }catch(e){ console.error(e); }
+}
+function updateSheetStatusUI(){
+  const btn = document.getElementById('sheetStatusBtn');
+  if(!btn) return;
+  if(gConnected) btn.textContent = '🟢 Google Sheets: đã kết nối';
+  else if(sheetConfig.clientId && sheetConfig.spreadsheetId) btn.textContent = '🟡 Google Sheets: chưa đăng nhập';
+  else btn.textContent = '🔗 Google Sheets: chưa kết nối';
+}
+function openSheetSettings(){
+  openModal(`
+    <div class="modal-head"><h3>Kết nối Google Sheets</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:12px">Dữ liệu sẽ được lưu dưới dạng 1 chuỗi JSON trong tab tên "Data" của Google Sheet — không hiển thị dạng bảng đẹp trong Sheets, chỉ dùng Sheet làm nơi lưu trữ chung.</div>
+      <div class="form-row"><label>Google Client ID</label><input id="cfg_client" value="${sheetConfig.clientId||''}" placeholder="xxxxx.apps.googleusercontent.com"></div>
+      <div class="form-row"><label>Spreadsheet ID</label><input id="cfg_sheet" value="${sheetConfig.spreadsheetId||''}" placeholder="Lấy từ URL giữa /d/ và /edit"></div>
+      <div class="hint">Đảm bảo Google Sheet có 1 tab tên chính xác là "Data" và cả 2 tài khoản Google đều có quyền Editor trên Sheet đó.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal()">Đóng</button>
+      <button class="btn btn-primary" onclick="saveSheetSettingsAndConnect()">Lưu & Đăng nhập Google</button>
+    </div>
+  `);
+}
+async function saveSheetSettingsAndConnect(){
+  const clientId = document.getElementById('cfg_client').value.trim();
+  const spreadsheetId = document.getElementById('cfg_sheet').value.trim();
+  if(!clientId || !spreadsheetId){ alert('Vui lòng nhập đủ Client ID và Spreadsheet ID'); return; }
+  sheetConfig = { clientId, spreadsheetId };
+  await saveSheetConfig();
+  closeModal();
+  connectGoogleSheets();
+}
+function connectGoogleSheets(){
+  if(!sheetConfig.clientId || !sheetConfig.spreadsheetId){ openSheetSettings(); return; }
+  if(typeof google === 'undefined' || !google.accounts){
+    alert('Không tải được thư viện đăng nhập Google (accounts.google.com). Có thể môi trường đang chặn script này.');
+    return;
+  }
+  try{
+    gTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: sheetConfig.clientId,
+      scope: SHEETS_SCOPE,
+      callback: handleGoogleTokenResponse,
+    });
+    gTokenClient.requestAccessToken({prompt: gAccessToken? '' : 'consent'});
+  }catch(e){
+    alert('Lỗi khởi tạo đăng nhập Google: '+e.message);
+  }
+}
+async function handleGoogleTokenResponse(resp){
+  if(resp.error){ alert('Đăng nhập Google thất bại: '+resp.error); gConnected=false; updateSheetStatusUI(); return; }
+  gAccessToken = resp.access_token;
+  gConnected = true;
+  updateSheetStatusUI();
+  await loadDBFromSheet();
+  navigate(activeTab||'dashboard');
+  if(!gPollTimer){
+    gPollTimer = setInterval(async ()=>{
+      const modalOpen = document.getElementById('modalRoot').innerHTML.trim().length>0;
+      const typingNow = document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName);
+      if(gConnected && !modalOpen && !typingNow){ await loadDBFromSheet(); render(); renderNav(); }
+    }, 20000);
+  }
+}
+async function sheetsApiFetch(method, body){
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetConfig.spreadsheetId}/values/Data!A1${method==='PUT'?'?valueInputOption=RAW':''}`;
+  const res = await fetch(url, {
+    method,
+    headers: { 'Authorization': 'Bearer '+gAccessToken, 'Content-Type': 'application/json' },
+    body: body? JSON.stringify(body) : undefined,
+  });
+  if(res.status===401){
+    gConnected = false; updateSheetStatusUI();
+    alert('Phiên đăng nhập Google đã hết hạn. Bấm "Google Sheets" ở menu trái để đăng nhập lại.');
+    throw new Error('unauthorized');
+  }
+  if(!res.ok){
+    const errText = await res.text();
+    throw new Error('Sheets API lỗi ('+res.status+'): '+errText.slice(0,200));
+  }
+  return res.json();
+}
+async function loadDBFromSheet(){
+  try{
+    const data = await sheetsApiFetch('GET');
+    const raw = data.values && data.values[0] && data.values[0][0];
+    if(raw){
+      DB = JSON.parse(raw);
+    } else {
+      await saveDBToSheet(); // initialize empty sheet with current local DB
+    }
+  }catch(e){
+    console.error(e);
+    alert('Không đọc được dữ liệu từ Google Sheet. Kiểm tra: Spreadsheet ID đúng chưa, tab tên "Data" đã tạo chưa, tài khoản đã được chia sẻ quyền Editor chưa.\n\nChi tiết: '+e.message);
+  }
+}
+async function saveDBToSheet(){
+  try{
+    await sheetsApiFetch('PUT', { values:[[JSON.stringify(DB)]] });
+  }catch(e){
+    console.error(e);
+    alert('Không lưu được dữ liệu lên Google Sheet.\n\nChi tiết: '+e.message);
+  }
+}
+
+async function loadDB(){
+  await loadDBFromSheet();
+}
+async function saveDB(){
+  await saveDBToSheet();
+}
+function uid(){ return 'id_'+Math.random().toString(36).slice(2)+Date.now().toString(36); }
+function genCode(prefix, key, pad=4){
+  DB.seq[key] = (DB.seq[key]||0)+1;
+  const n = String(DB.seq[key]).padStart(pad,'0');
+  const r = Math.random().toString(36).slice(2,4).toUpperCase();
+  return prefix+n+r; // random suffix keeps codes unique even if 2 máy tạo gần cùng lúc trước khi kịp đồng bộ
+}
+function fmt(n){ return (Math.round(n||0)).toLocaleString('vi-VN')+'đ'; }
+function fmtDate(d){ if(!d) return '—'; const x=new Date(d); return x.toLocaleDateString('vi-VN')+' '+x.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}); }
+function todayISO(){ return new Date().toISOString(); }
+
+/* ======================= CONSTANTS ======================= */
+const ORDER_STATUSES = [
+  {key:'nhap', label:'Nháp', bg:'#EEF0F5', fg:'#5B6172'},
+  {key:'cho_hang', label:'Đặt trước chờ hàng', bg:'#FBEEDA', fg:'#946417'},
+  {key:'xac_nhan', label:'Xác nhận chờ giao hàng', bg:'#E3F6F5', fg:'#0b7f7b'},
+  {key:'dang_giao', label:'Đang giao hàng', bg:'#E9EFFD', fg:'#2C55C4'},
+  {key:'hoan_tat', label:'Hoàn tất', bg:'#E4F5EC', fg:'#177047'},
+  {key:'huy', label:'Hủy đơn', bg:'#FCE7EA', fg:'#B5233A'},
+];
+const PAYMENT_STATUSES = [
+  {key:'chua_tt', label:'Chưa thanh toán', bg:'#FCE7EA', fg:'#B5233A'},
+  {key:'tt_mot_phan', label:'Thanh toán 1 phần', bg:'#FBEEDA', fg:'#946417'},
+  {key:'da_tt', label:'Đã thanh toán', bg:'#E4F5EC', fg:'#177047'},
+];
+const PAYMENT_METHODS = {chuyen_khoan:'Chuyển khoản', cod:'COD', tien_mat:'Tiền mặt'};
+const CARRIERS = {shopee_express:'Shopee Express', viettel_post:'Viettel Post', grab_lalamove:'Grab/Lalamove', tu_lay:'Khách tự lấy hàng'};
+const COMP_TYPES = {hoan_tien:'Hoàn tiền', gui_hang_bu:'Gửi hàng bù'};
+
+function statusMeta(key,list){ return list.find(s=>s.key===key) || list[0]; }
+function tagHtml(key,list){ const m=statusMeta(key,list); return `<span class="tag" style="background:${m.bg};color:${m.fg}">${m.label}</span>`; }
+function selectHtml(id,key,list,onchange){
+  return `<select class="inline-select" onchange="${onchange}('${id}', this.value)">`+
+    list.map(s=>`<option value="${s.key}" ${s.key===key?'selected':''}>${s.label}</option>`).join('')+
+  `</select>`;
+}
+
+/* ======================= NAVIGATION ======================= */
+const MENU = [
+  {key:'dashboard', label:'Tổng quan', ic:'📊'},
+  {key:'inventory', label:'Kho hàng', ic:'📦'},
+  {key:'pricing', label:'Giá bán', ic:'💲'},
+  {key:'orders', label:'Đơn hàng', ic:'🧾'},
+  {key:'complaints', label:'Khiếu nại, Đền hàng', ic:'⚠️'},
+  {key:'reports', label:'Báo cáo', ic:'📈'},
+];
+function renderNav(){
+  const readyCount = Object.values(getPreorderReadiness()).filter(Boolean).length;
+  document.getElementById('navMenu').innerHTML = MENU.map(m=>`
+    <div class="nav-item ${activeTab===m.key?'active':''}" onclick="navigate('${m.key}')" title="${m.label}">
+      <span class="ic">${m.ic}</span><span>${m.label}</span>
+      ${m.key==='orders' && readyCount>0 ? `<span class="nav-badge">${readyCount}</span>`:''}
+    </div>`).join('');
+}
+function navigate(tab){
+  activeTab = tab;
+  renderNav();
+  if(!gConnected){ renderConnectGate(); return; }
+  const titles = {dashboard:'Tổng quan', inventory:'Kho hàng', pricing:'Giá bán', orders:'Đơn hàng', complaints:'Khiếu nại & Đền hàng', reports:'Báo cáo'};
+  document.getElementById('pageTitle').textContent = titles[tab];
+  const metas = {
+    dashboard:'Bức tranh tổng thể tình hình kinh doanh — cuộn xuống để xem thêm',
+    inventory:'Quản lý sản phẩm, tồn kho và lịch sử nhập hàng',
+    pricing:'Thiết lập và theo dõi lịch sử giá bán từng sản phẩm',
+    orders:'Tạo và theo dõi đơn hàng, đơn đặt trước',
+    complaints:'Ghi nhận khiếu nại và xử lý đền hàng',
+    reports:'Tổng hợp tài chính và hiệu quả kinh doanh',
+  };
+  document.getElementById('pageMeta').textContent = metas[tab];
+  const actions = {
+    inventory: `<button class="btn btn-secondary" onclick="openImportModal(null)">📥 Nhập thêm hàng</button> <button class="btn btn-primary" onclick="openProductModal()">+ Thêm sản phẩm</button>`,
+    orders: `<button class="btn btn-secondary" onclick="openOrderModal('normal')">+ Đơn thường</button> <button class="btn btn-amber" onclick="openOrderModal('preorder')">+ Đơn đặt trước</button>`,
+    complaints: `<button class="btn btn-primary" onclick="openComplaintModal()">+ Tạo khiếu nại/đền hàng</button>`,
+  };
+  document.getElementById('topbarActions').innerHTML = actions[tab] || '';
+  render();
+}
+function renderConnectGate(){
+  document.getElementById('pageTitle').textContent = 'Kết nối Google Sheets';
+  document.getElementById('pageMeta').textContent = 'Cần đăng nhập để đồng bộ dữ liệu dùng chung';
+  document.getElementById('topbarActions').innerHTML = '';
+  const configured = sheetConfig.clientId && sheetConfig.spreadsheetId;
+  document.getElementById('content').innerHTML = `
+    <div class="card" style="max-width:460px;margin:50px auto;text-align:center;padding:32px 24px">
+      <div style="font-size:38px;margin-bottom:10px">📗</div>
+      <h3 style="margin:0 0 8px">${configured? 'Đăng nhập Google để bắt đầu' : 'Chưa kết nối Google Sheets'}</h3>
+      <p class="muted small" style="margin-bottom:18px">${configured? 'Dữ liệu của bạn được lưu chung trên Google Sheets — mỗi lần mở trang cần đăng nhập lại 1 lần.' : 'Nhập Client ID và Spreadsheet ID để bắt đầu dùng chung dữ liệu qua Google Sheets.'}</p>
+      ${configured? `<button class="btn btn-primary" onclick="connectGoogleSheets()">🔐 Đăng nhập Google</button> <button class="btn btn-secondary" onclick="openSheetSettings()">⚙️ Đổi cấu hình</button>`
+                  : `<button class="btn btn-primary" onclick="openSheetSettings()">⚙️ Thiết lập kết nối</button>`}
+    </div>
+  `;
+}
+function render(){
+  if(!gConnected){ renderConnectGate(); return; }
+  if(activeTab==='dashboard') renderDashboard();
+  if(activeTab==='inventory') renderInventory();
+  if(activeTab==='pricing') renderPricing();
+  if(activeTab==='orders') renderOrders();
+  if(activeTab==='complaints') renderComplaints();
+  if(activeTab==='reports') renderReports();
+}
+
+/* ======================= DASHBOARD ======================= */
+function renderDashboard(){
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const startMonth = new Date(now.getFullYear(),now.getMonth(),1);
+  const completed = DB.orders.filter(o=>o.status==='hoan_tat');
+  const revToday = completed.filter(o=>new Date(o.createdAt)>=startToday).reduce((s,o)=>s+orderItemsValue(o),0);
+  const revMonth = completed.filter(o=>new Date(o.createdAt)>=startMonth).reduce((s,o)=>s+orderItemsValue(o),0);
+  const pending = DB.orders.filter(o=>['nhap','cho_hang','xac_nhan','dang_giao'].includes(o.status)).length;
+  const lowStock = DB.products.filter(p=>p.stock<=5);
+  const readiness = getPreorderReadiness();
+  const readyOrders = DB.orders.filter(o=>o.type==='preorder' && o.status==='cho_hang' && readiness[o.id]);
+  const openComplaints = DB.complaints.slice(-5).reverse();
+  const recentOrders = [...DB.orders].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,6);
+
+  document.getElementById('content').innerHTML = `
+    <div class="grid grid-kpi">
+      <div class="card kpi accent-teal"><div class="label">Doanh thu hôm nay</div><div class="value">${fmt(revToday)}</div><div class="foot">Đơn đã hoàn tất</div></div>
+      <div class="card kpi accent-green"><div class="label">Doanh thu tháng này</div><div class="value">${fmt(revMonth)}</div><div class="foot">${completed.length} đơn hoàn tất tổng cộng</div></div>
+      <div class="card kpi accent-amber"><div class="label">Đơn đang xử lý</div><div class="value">${pending}</div><div class="foot">Nháp / chờ hàng / xác nhận / đang giao</div></div>
+      <div class="card kpi accent-red"><div class="label">Sản phẩm sắp hết</div><div class="value">${lowStock.length}</div><div class="foot">Tồn kho ≤ 5</div></div>
+    </div>
+
+    ${readyOrders.length? `<div class="banner" style="margin-top:16px">🔔 <b>${readyOrders.length} đơn đặt trước</b> đã đủ hàng, có thể chuyển sang xác nhận. <button class="btn btn-sm btn-primary" onclick="navigate('orders')">Xem đơn hàng</button></div>` : ''}
+
+    <div class="grid grid-2" style="margin-top:16px">
+      <div>
+        <div class="section-title">Đơn hàng gần đây</div>
+        <div class="table-wrap"><table><thead><tr><th>Mã đơn</th><th>Khách hàng</th><th>Giá trị</th><th>Trạng thái</th></tr></thead><tbody>
+        ${recentOrders.length? recentOrders.map(o=>`<tr><td><b>${o.code}</b></td><td>${o.customerName}<br><span class="muted small">${o.phone}</span></td><td>${fmt(orderTotal(o))}</td><td>${tagHtml(o.status,ORDER_STATUSES)}</td></tr>`).join('') : `<tr><td colspan="4" class="empty">Chưa có đơn hàng nào</td></tr>`}
+        </tbody></table></div>
+      </div>
+      <div>
+        <div class="section-title">Sản phẩm sắp hết hàng</div>
+        <div class="table-wrap"><table><thead><tr><th>Mã SP</th><th>Tên sản phẩm</th><th>Tồn kho</th></tr></thead><tbody>
+        ${lowStock.length? lowStock.map(p=>`<tr><td>${p.code}</td><td>${p.name}</td><td style="color:var(--red);font-weight:700">${p.stock}</td></tr>`).join('') : `<tr><td colspan="3" class="empty">Không có sản phẩm nào sắp hết</td></tr>`}
+        </tbody></table></div>
+      </div>
+    </div>
+    <div class="section-title">Khiếu nại / đền hàng gần đây</div>
+    <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Sản phẩm</th><th>Hình thức</th></tr></thead><tbody>
+    ${openComplaints.length? openComplaints.map(c=>`<tr><td>${c.customerName}</td><td>${c.product}</td><td>${COMP_TYPES[c.compensationType]}</td></tr>`).join('') : `<tr><td colspan="3" class="empty">Chưa có khiếu nại nào</td></tr>`}
+    </tbody></table></div>
+  `;
+}
+
+/* ======================= INVENTORY ======================= */
+function renderInventory(){
+  document.getElementById('content').innerHTML = `
+    <div class="search-bar">
+      <input type="text" id="invSearchInput" placeholder="🔍 Tìm theo tên hoặc mã sản phẩm..." value="${inv.search}" oninput="inv.search=this.value; renderInventoryResults()">
+      <span class="muted small" id="invCount"></span>
+    </div>
+    <div id="invResults"></div>
+    <div class="section-title">Tổng hợp nhu cầu Preorder theo sản phẩm <span class="hint">Chỉ tính đơn đặt trước đang "Chờ hàng"</span></div>
+    <div id="invPreorderNeeds"></div>
+  `;
+  renderInventoryResults();
+}
+function renderInventoryResults(){
+  const list = DB.products.filter(p=> (p.name+p.code).toLowerCase().includes(inv.search.toLowerCase()) );
+  document.getElementById('invCount').textContent = list.length+' sản phẩm';
+  const totalInvValue = DB.products.reduce((s,p)=>s+p.stock*p.importPrice,0);
+  document.getElementById('invResults').innerHTML = `
+    <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span class="muted small">Tổng giá trị tồn kho toàn bộ</span><b style="font-size:17px;color:var(--teal)">${fmt(totalInvValue)}</b>
+    </div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Mã SP</th><th>Tên sản phẩm</th><th>Giá nhập (TB)</th><th>Tồn kho</th><th>Tổng giá trị tồn kho</th><th>Lịch sử nhập</th><th>Thao tác</th>
+    </tr></thead><tbody>
+    ${list.length? list.map(p=>`
+      <tr>
+        <td><b>${p.code}</b></td>
+        <td>${p.name}</td>
+        <td>${fmt(p.importPrice)}</td>
+        <td style="font-weight:800;${p.stock<=5?'color:var(--red)':''}">${p.stock}</td>
+        <td style="font-weight:700">${fmt(p.stock*p.importPrice)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openHistoryModal('${p.id}')">Xem (${p.history.length})</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-secondary btn-sm" onclick="openImportModal('${p.id}')">Nhập</button>
+          <button class="btn btn-secondary btn-sm" onclick="openCopyProductModal('${p.id}')">Copy</button>
+          <button class="btn btn-secondary btn-sm" onclick="openProductModal('${p.id}')">Sửa</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Xóa</button>
+        </td>
+      </tr>`).join('') : `<tr><td colspan="7" class="empty">Chưa có sản phẩm nào — bấm "+ Thêm sản phẩm" để bắt đầu</td></tr>`}
+    </tbody></table></div>
+  `;
+  const needs = computePreorderNeeds();
+  document.getElementById('invPreorderNeeds').innerHTML = `
+    <div class="table-wrap"><table><thead><tr><th>Mã SP</th><th>Tên sản phẩm</th><th>Tồn kho hiện tại</th><th>Tổng SL đặt trước</th><th>Cần nhập thêm</th></tr></thead><tbody>
+    ${needs.length? needs.map(r=>`<tr><td>${r.code}</td><td>${r.name}</td><td>${r.stock}</td><td>${r.needed}</td><td style="font-weight:800;color:${r.gap>0?'var(--red)':'var(--green)'}">${r.gap>0?r.gap:'Đủ'}</td></tr>`).join('') : `<tr><td colspan="5" class="empty">Chưa có nhu cầu preorder nào</td></tr>`}
+    </tbody></table></div>
+    ${needs.length? `<div style="margin-top:10px"><button class="btn btn-secondary" onclick="exportPreorderNeeds()">⬇ Xuất file cần đặt hàng (Excel)</button></div>` : ''}
+  `;
+}
+function computePreorderNeeds(){
+  const map = {};
+  DB.orders.filter(o=>o.type==='preorder' && o.status==='cho_hang').forEach(o=>{
+    o.items.forEach(it=>{ map[it.productId] = (map[it.productId]||0) + Number(it.qty); });
+  });
+  return Object.keys(map).map(pid=>{
+    const p = DB.products.find(x=>x.id===pid);
+    if(!p) return null;
+    return {code:p.code, name:p.name, stock:p.stock, needed:map[pid], gap:Math.max(0, map[pid]-p.stock)};
+  }).filter(Boolean);
+}
+function openProductModal(productId){
+  const p = productId? DB.products.find(x=>x.id===productId) : null;
+  openModal(`
+    <div class="modal-head"><h3>${p?'Sửa tên sản phẩm':'Thêm sản phẩm mới'}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label>Tên sản phẩm</label><input id="f_name" value="${p?p.name:''}" placeholder="VD: Áo thun basic - Trắng"></div>
+      ${p? '' : `<div class="hint" style="margin-top:-6px;color:var(--muted);font-size:11.5px">Sau khi tạo, vào "Nhập thêm hàng" để nhập số lượng & giá nhập, và vào tab "Giá bán" để đặt giá bán.</div>`}
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveProductName(${p?`'${p.id}'`:'null'})">Lưu</button></div>
+  `);
+}
+function saveProductName(id){
+  const name = document.getElementById('f_name').value.trim();
+  if(!name){ alert('Vui lòng nhập tên sản phẩm'); return; }
+  const clash = DB.products.find(x=>x.id!==id && x.name.trim().toLowerCase()===name.toLowerCase());
+  if(clash){ alert('Đã có sản phẩm trùng tên (mã '+clash.code+'). Vui lòng đặt tên khác.'); return; }
+  if(id){
+    const p = DB.products.find(x=>x.id===id); p.name = name;
+  } else {
+    DB.products.push({ id: uid(), code: genCode('SP','product'), name, importPrice:0, sellPrice:0, stock:0, history:[], priceHistory:[], createdAt: todayISO() });
+  }
+  saveDB(); closeModal(); renderInventoryResults(); renderNav();
+}
+function openCopyProductModal(productId){
+  const p = DB.products.find(x=>x.id===productId);
+  openModal(`
+    <div class="modal-head"><h3>Copy sản phẩm — tạo biến thể mới</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:12px">Tạo nhanh một sản phẩm mới kế thừa giá nhập/giá bán của "${p.name}". Đổi tên (VD thêm màu) để tạo mã mới.</div>
+      <div class="form-row"><label>Tên sản phẩm mới</label><input id="f_name" value="${p.name} - " placeholder="VD: ${p.name} - Đen"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="doCopyProduct('${p.id}')">Tạo sản phẩm</button></div>
+  `);
+}
+function doCopyProduct(sourceId){
+  const src = DB.products.find(x=>x.id===sourceId);
+  const name = document.getElementById('f_name').value.trim();
+  if(!name){ alert('Vui lòng nhập tên sản phẩm'); return; }
+  const clash = DB.products.find(x=>x.name.trim().toLowerCase()===name.toLowerCase());
+  if(clash){ alert('Đã có sản phẩm trùng tên (mã '+clash.code+').'); return; }
+  DB.products.push({ id: uid(), code: genCode('SP','product'), name, importPrice: src.importPrice, sellPrice: src.sellPrice,
+    stock:0, history:[], priceHistory: src.sellPrice? [{date:todayISO(), price:src.sellPrice}] : [], createdAt: todayISO() });
+  saveDB(); closeModal(); renderInventoryResults(); renderNav();
+}
+
+/* ---- Batch stock import ---- */
+let importForm = null;
+function openImportModal(productId){
+  importForm = { rows: productId? [{productId, qty:0, totalValue:0}] : [{productId:'', qty:0, totalValue:0}] };
+  openModal(importFormHtml(), true);
+}
+function importFormHtml(){
+  const rows = importForm.rows;
+  return `
+    <div class="modal-head"><h3>Nhập thêm hàng — lô hàng mới</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:10px">Chọn sản phẩm, số lượng và <b>tổng giá trị đơn nhập</b> cho sản phẩm đó trong lô này. Hệ thống tự tính giá nhập trung bình = (tổng giá trị tồn kho hiện tại + tổng giá trị lô mới) / (số lượng tồn + số lượng mới).</div>
+      <div id="importRows">
+      ${rows.map((r,idx)=>{
+        const p = DB.products.find(x=>x.id===r.productId);
+        return `<div class="item-row">
+          <div><select onchange="importForm.rows[${idx}].productId=this.value; refreshImportForm()">
+            <option value="">-- Chọn sản phẩm --</option>
+            ${DB.products.map(pp=>`<option value="${pp.id}" ${r.productId===pp.id?'selected':''}>${pp.code} — ${pp.name}</option>`).join('')}
+          </select>${p?`<div class="stock-note">Tồn hiện tại: ${p.stock} — Giá trị tồn: ${fmt(p.stock*p.importPrice)}</div>`:''}</div>
+          <div><input type="number" placeholder="Số lượng" value="${r.qty||''}" oninput="importForm.rows[${idx}].qty=Number(this.value)||0"></div>
+          <div><input type="number" placeholder="Tổng giá trị lô" value="${r.totalValue||''}" oninput="importForm.rows[${idx}].totalValue=Number(this.value)||0"></div>
+          <div>${rows.length>1?`<button class="rm-item" onclick="importForm.rows.splice(${idx},1); refreshImportForm()">✕</button>`:''}</div>
+        </div>`;
+      }).join('')}
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="importForm.rows.push({productId:'',qty:0,totalValue:0}); refreshImportForm()">+ Thêm dòng</button>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="doBatchImport()">Nhập kho</button></div>
+  `;
+}
+function refreshImportForm(){ document.getElementById('modalRoot').querySelector('.modal').innerHTML = importFormHtml(); }
+function doBatchImport(){
+  const valid = importForm.rows.filter(r=>r.productId && r.qty>0);
+  if(valid.length===0){ alert('Vui lòng chọn ít nhất 1 sản phẩm với số lượng > 0'); return; }
+  const readyBefore = Object.values(getPreorderReadiness()).filter(Boolean).length;
+  valid.forEach(r=>{
+    const p = DB.products.find(x=>x.id===r.productId);
+    const oldStockValue = p.stock * p.importPrice;
+    const newStock = p.stock + r.qty;
+    const unitPrice = r.qty>0 ? Math.round(r.totalValue/r.qty) : 0;
+    p.importPrice = newStock>0 ? Math.round((oldStockValue + r.totalValue)/newStock) : unitPrice;
+    p.stock = newStock;
+    p.history.push({date:todayISO(), qty:r.qty, price:unitPrice});
+  });
+  saveDB(); closeModal(); importForm=null;
+  if(activeTab==='inventory') renderInventoryResults();
+  renderNav();
+  const readyAfter = Object.values(getPreorderReadiness()).filter(Boolean).length;
+  if(readyAfter>readyBefore) alert('✅ Đã nhập kho. Hiện có '+readyAfter+' đơn đặt trước đủ hàng — có thể chuyển sang xác nhận ở tab Đơn hàng.');
+}
+function openHistoryModal(productId){
+  const p = DB.products.find(x=>x.id===productId);
+  openModal(`
+    <div class="modal-head"><h3>Lịch sử nhập hàng — ${p.name}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body"><div class="hist-list">
+      ${p.history.length? [...p.history].reverse().map(h=>`<div class="hist-item"><span>${fmtDate(h.date)}</span><span>+${h.qty} sp</span><span class="muted">${fmt(h.price)}/sp</span></div>`).join('') : `<div class="empty">Chưa có lịch sử nhập</div>`}
+    </div></div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Đóng</button></div>
+  `);
+}
+function deleteProduct(productId){
+  const usedInOrders = DB.orders.some(o=>o.items.some(it=>it.productId===productId));
+  if(usedInOrders && !confirm('Sản phẩm này đang xuất hiện trong một số đơn hàng. Vẫn xóa khỏi kho?')) return;
+  DB.products = DB.products.filter(x=>x.id!==productId);
+  saveDB(); renderInventoryResults();
+}
+
+/* ======================= PRICING (Giá bán) ======================= */
+function previousPrice(p){
+  const hist = p.priceHistory||[];
+  if(hist.length>=2) return hist[hist.length-2].price;
+  return null;
+}
+function renderPricing(){
+  document.getElementById('content').innerHTML = `
+    <div class="table-wrap"><table><thead><tr><th>Mã SP</th><th>Tên sản phẩm</th><th>Giá bán gần nhất</th><th>Giá bán hiện tại</th><th>Giá bán mới</th><th>Lịch sử giá</th></tr></thead><tbody>
+    ${DB.products.length? DB.products.map(p=>{
+      const prev = previousPrice(p);
+      return `
+      <tr>
+        <td><b>${p.code}</b></td>
+        <td>${p.name}</td>
+        <td class="muted">${prev!==null? fmt(prev) : '—'}</td>
+        <td style="font-weight:700">${fmt(p.sellPrice)}</td>
+        <td style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="price_${p.id}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px" placeholder="Giá mới">
+          <button class="btn btn-primary btn-sm" onclick="savePrice('${p.id}')">Lưu</button>
+        </td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openPriceHistoryModal('${p.id}')">Xem (${(p.priceHistory||[]).length})</button></td>
+      </tr>`;}).join('') : `<tr><td colspan="6" class="empty">Chưa có sản phẩm nào trong kho</td></tr>`}
+    </tbody></table></div>
+  `;
+}
+function savePrice(productId){
+  const p = DB.products.find(x=>x.id===productId);
+  const input = document.getElementById('price_'+productId);
+  const newPrice = Number(input.value);
+  if(!newPrice || newPrice<=0){ alert('Vui lòng nhập giá bán hợp lệ'); return; }
+  if(newPrice===p.sellPrice){ alert('Giá mới trùng với giá hiện tại'); return; }
+  p.priceHistory = p.priceHistory||[];
+  p.priceHistory.push({date:todayISO(), price:newPrice});
+  p.sellPrice = newPrice;
+  saveDB(); renderPricing();
+}
+function openPriceHistoryModal(productId){
+  const p = DB.products.find(x=>x.id===productId);
+  const hist = p.priceHistory||[];
+  openModal(`
+    <div class="modal-head"><h3>Lịch sử giá bán — ${p.name}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body"><div class="hist-list">
+      ${hist.length? [...hist].reverse().map(h=>`<div class="hist-item"><span>${fmtDate(h.date)}</span><span style="font-weight:700">${fmt(h.price)}</span></div>`).join('') : `<div class="empty">Chưa có lịch sử giá</div>`}
+    </div></div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Đóng</button></div>
+  `);
+}
+
+/* ======================= ORDERS ======================= */
+let orderForm = null;
+function orderItemsValue(o){ return o.items.reduce((s,it)=>s+it.qty*it.price,0); }
+function orderTotal(o){ return orderItemsValue(o) + Number(o.shipFee||0) - Number(o.discount||0); }
+
+function getPreorderReadiness(){
+  const pendingByProduct = {};
+  DB.orders.filter(o=>o.type==='preorder' && o.status==='cho_hang').forEach(o=>{
+    o.items.forEach(it=>{
+      pendingByProduct[it.productId] = pendingByProduct[it.productId]||[];
+      pendingByProduct[it.productId].push({orderId:o.id, qty:Number(it.qty), priority:o.priority, createdAt:o.createdAt});
+    });
+  });
+  const ready = {};
+  Object.keys(pendingByProduct).forEach(pid=>{
+    const p = DB.products.find(x=>x.id===pid);
+    let avail = p? p.stock:0;
+    const list = pendingByProduct[pid].sort((a,b)=>{
+      if(a.priority!==b.priority) return a.priority==='gap'? -1:1;
+      return new Date(a.createdAt)-new Date(b.createdAt);
+    });
+    list.forEach(item=>{
+      if(avail>=item.qty){ ready[item.orderId]=true; avail-=item.qty; }
+      else if(ready[item.orderId]===undefined){ ready[item.orderId]=false; }
+    });
+  });
+  return ready;
+}
+
+function renderOrders(){
+  document.getElementById('content').innerHTML = `
+    <div class="search-bar">
+      <input type="text" id="ordSearchInput" placeholder="🔍 Tìm theo tên khách hoặc SĐT..." value="${ordUi.search}" oninput="ordUi.search=this.value; renderOrdersResults()">
+      <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
+      <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
+      <span class="muted small" id="ordCount"></span>
+    </div>
+    <div id="ordResults"></div>
+  `;
+  renderOrdersResults();
+}
+function renderOrdersResults(){
+  const readiness = getPreorderReadiness();
+  const q = ordUi.search.toLowerCase();
+  const list = [...DB.orders].filter(o=> (o.customerName+' '+o.phone+' '+o.code).toLowerCase().includes(q))
+    .sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
+  document.getElementById('ordCount').textContent = list.length+' đơn';
+  document.getElementById('ordResults').innerHTML = `
+    <div class="table-wrap"><table><thead><tr>
+      <th>Mã đơn</th><th>Mã vận đơn</th><th>Vận chuyển</th><th>Khách hàng</th><th>Sản phẩm</th><th>Giá trị</th><th>Trạng thái đơn</th><th>Thanh toán</th><th>Cập nhật lần cuối</th><th></th>
+    </tr></thead><tbody>
+    ${list.length? list.map(o=>`
+      <tr>
+        <td><b>${o.code}</b>${o.type==='preorder'?`<br><span class="tag" style="background:var(--amber-light);color:#946417">Preorder${o.priority==='gap'?' • Gấp':''}</span>`:''}${readiness[o.id]?`<br><span class="tag" style="background:var(--green-light);color:var(--green)">✓ Đủ hàng</span>`:''}</td>
+        <td class="small">${o.trackingCode||'—'}</td>
+        <td class="small">${CARRIERS[o.carrier]||'—'}</td>
+        <td>${o.customerName}<br><span class="muted small">${o.phone}</span><br><span class="muted small">${o.address}</span></td>
+        <td class="small">${o.items.map(i=>i.name+' x'+i.qty).join('<br>')}</td>
+        <td style="font-weight:700">${fmt(orderTotal(o))}</td>
+        <td>${selectHtml(o.id,o.status,ORDER_STATUSES,'updateOrderStatus')}</td>
+        <td>${selectHtml(o.id,o.paymentStatus,PAYMENT_STATUSES,'updatePaymentStatus')}</td>
+        <td class="small">${fmtDate(o.updatedAt||o.createdAt)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openOrderDetail('${o.id}')">Chi tiết</button></td>
+      </tr>`).join('') : `<tr><td colspan="10" class="empty">Chưa có đơn hàng nào</td></tr>`}
+    </tbody></table></div>
+  `;
+}
+function updateOrderStatus(orderId, newStatus){
+  const o = DB.orders.find(x=>x.id===orderId);
+  if(!o) return;
+  if(newStatus==='xac_nhan' && !o.stockDeducted){
+    const insufficient = o.items.filter(it=>{ const p=DB.products.find(x=>x.id===it.productId); return !p || p.stock<it.qty; });
+    if(insufficient.length){ alert('Không đủ hàng trong kho cho: '+insufficient.map(i=>i.name).join(', ')); renderOrdersResults(); return; }
+    o.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock-=it.qty; });
+    o.stockDeducted = true;
+  }
+  if((newStatus==='huy'||newStatus==='nhap'||newStatus==='cho_hang') && o.stockDeducted){
+    o.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock+=it.qty; });
+    o.stockDeducted = false;
+  }
+  o.status = newStatus; o.updatedAt = todayISO();
+  saveDB(); renderOrdersResults(); renderNav();
+}
+function updatePaymentStatus(orderId, newStatus){
+  const o = DB.orders.find(x=>x.id===orderId); if(!o) return;
+  o.paymentStatus = newStatus; o.updatedAt = todayISO();
+  saveDB(); renderOrdersResults();
+}
+
+function openOrderModal(type, existingId){
+  const existing = existingId? DB.orders.find(x=>x.id===existingId) : null;
+  orderForm = existing? JSON.parse(JSON.stringify(existing)) : {
+    id:null, type: type||'normal', priority:'binh_thuong', customerName:'', phone:'', address:'',
+    items:[{productId:'', name:'', qty:1, price:0}], carrier:'shopee_express', trackingCode:'', paymentMethod:'cod', shipFee:0, discount:0,
+    paymentStatus:'chua_tt', status: (type==='preorder'?'cho_hang':'xac_nhan'), note:'', stockDeducted:false, createdAt: todayISO(), updatedAt: todayISO(),
+  };
+  const locked = existing && existing.stockDeducted;
+  openModal(orderFormHtml(locked), true);
+}
+function orderFormHtml(itemsLocked){
+  const f = orderForm;
+  const typeLabel = f.type==='preorder' ? 'Đơn đặt trước' : 'Đơn thường';
+  const statusOptions = f.type==='preorder' ? ORDER_STATUSES : ORDER_STATUSES.filter(s=>s.key!=='cho_hang');
+  return `
+    <div class="modal-head"><h3>${f.id? 'Chi tiết / Sửa đơn hàng' : 'Tạo '+typeLabel.toLowerCase()}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><span class="type-label">${typeLabel}</span></div>
+      ${f.type==='preorder'? `
+      <div class="form-row"><label>Mức độ ưu tiên</label>
+        <select onchange="orderForm.priority=this.value">
+          <option value="binh_thuong" ${f.priority==='binh_thuong'?'selected':''}>Bình thường</option>
+          <option value="gap" ${f.priority==='gap'?'selected':''}>Gấp (ưu tiên phân bổ hàng trước)</option>
+        </select>
+      </div>`:''}
+      <div class="form-2col">
+        <div class="form-row"><label>Tên người nhận</label><input value="${f.customerName}" oninput="orderForm.customerName=this.value"></div>
+        <div class="form-row" style="position:relative">
+          <label>Số điện thoại</label>
+          <input value="${f.phone}" oninput="orderForm.phone=this.value; showPhoneSuggestions(this.value)" onblur="setTimeout(()=>hidePhoneSuggestions(this.value),150)" onfocus="showPhoneSuggestions(this.value)" placeholder="Nhập SĐT — hệ thống sẽ gợi ý khách cũ" autocomplete="off">
+          <div id="phoneSuggestions"></div>
+        </div>
+      </div>
+      <div class="form-row"><label>Địa chỉ chi tiết</label><input value="${f.address}" oninput="orderForm.address=this.value"></div>
+      ${f._foundCustomer? `<div class="hint" style="color:var(--green);margin-top:-8px;margin-bottom:12px">✓ Đã tìm thấy khách hàng cũ — tự động điền tên & địa chỉ</div>` : ''}
+
+      <div class="form-row">
+        <label>Sản phẩm ${itemsLocked?'<span class="muted">(đã trừ kho — không thể sửa danh sách)</span>':''}</label>
+        <div id="itemRows">${itemRowsHtml(itemsLocked)}</div>
+        ${!itemsLocked? `<button class="btn btn-secondary btn-sm" onclick="addOrderItem()">+ Thêm sản phẩm</button>`:''}
+      </div>
+      <div class="totalbox"><span>Giá trị đơn hàng (chưa gồm ship)</span><b id="itemsValueDisplay">${fmt(orderItemsValue(f))}</b></div>
+
+      <div class="form-2col" style="margin-top:14px">
+        <div class="form-row"><label>Giảm giá</label><input type="number" value="${f.discount||0}" oninput="orderForm.discount=Number(this.value)||0; updateOrderTotals()"></div>
+        <div class="form-row"><label>Phí ship</label><input type="number" value="${f.shipFee}" oninput="orderForm.shipFee=Number(this.value)||0; updateOrderTotals()"></div>
+      </div>
+      <div class="form-row"><label>Hình thức vận chuyển</label>
+        <select onchange="orderForm.carrier=this.value; refreshOrderForm()">
+          ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${f.carrier===k?'selected':''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      ${(f.carrier==='shopee_express'||f.carrier==='viettel_post')? `
+      <div class="form-row"><label>Mã vận đơn</label><input value="${f.trackingCode}" oninput="orderForm.trackingCode=this.value" placeholder="Nhập mã vận đơn"></div>`:''}
+
+      <div class="form-2col">
+        <div class="form-row"><label>Hình thức thanh toán</label>
+          <select onchange="orderForm.paymentMethod=this.value">
+            ${Object.entries(PAYMENT_METHODS).map(([k,v])=>`<option value="${k}" ${f.paymentMethod===k?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row"><label>Trạng thái thanh toán</label>
+          <select onchange="orderForm.paymentStatus=this.value">
+            ${PAYMENT_STATUSES.map(s=>`<option value="${s.key}" ${f.paymentStatus===s.key?'selected':''}>${s.label}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-row"><label>Trạng thái đơn</label>
+        <select onchange="orderForm.status=this.value">
+          ${statusOptions.map(s=>`<option value="${s.key}" ${f.status===s.key?'selected':''}>${s.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-row"><label>Ghi chú</label><textarea rows="2" oninput="orderForm.note=this.value">${f.note||''}</textarea></div>
+      <div class="totalbox" style="background:var(--green-light)"><span>Tổng tiền khách phải trả</span><b id="grandTotalDisplay" style="color:var(--green)">${fmt(orderTotal(f))}</b></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary" onclick="closeModal()">Hủy</button>
+      <button class="btn btn-secondary" onclick="saveOrder(true)">💾 Lưu nháp</button>
+      <button class="btn btn-primary" onclick="saveOrder(false)">Lưu đơn hàng</button>
+    </div>
+  `;
+}
+function itemRowsHtml(locked){
+  const f = orderForm;
+  if(f.items.length===0) return `<div class="muted small" style="margin-bottom:8px">Chưa có sản phẩm nào trong đơn</div>`;
+  return f.items.map((it,idx)=>{
+    const p = DB.products.find(x=>x.id===it.productId);
+    const stock = p? p.stock : 0;
+    return `<div class="item-row" data-idx="${idx}">
+      <div>
+        <select ${locked?'disabled':''} onchange="setOrderItemProduct(${idx}, this.value)">
+          <option value="">-- Chọn sản phẩm --</option>
+          ${DB.products.map(pp=>`<option value="${pp.id}" ${it.productId===pp.id?'selected':''}>${pp.code} — ${pp.name}</option>`).join('')}
+        </select>
+        ${(f.type==='normal' && p)? `<div class="stock-note">Còn lại trong kho: ${stock}</div>`:''}
+      </div>
+      <div><input type="number" ${locked?'disabled':''} min="1" ${f.type==='normal'&&p?`max="${stock}"`:''} value="${it.qty}" oninput="setOrderItemQty(${idx}, this.value)" onblur="validateOrderItemQty(${idx})"></div>
+      <div><input type="number" ${locked?'disabled':''} value="${it.price}" oninput="setOrderItemPrice(${idx}, this.value)"></div>
+      <div>${locked?'':`<button class="rm-item" onclick="removeOrderItem(${idx})">✕</button>`}</div>
+    </div>`;
+  }).join('');
+}
+function getCustomerHistory(){
+  const map = {};
+  DB.orders.forEach(o=>{
+    if(!o.phone) return;
+    map[o.phone] = {phone:o.phone, customerName:o.customerName, address:o.address, updatedAt:o.updatedAt||o.createdAt};
+  });
+  return Object.values(map);
+}
+function showPhoneSuggestions(query){
+  query = (query||'').trim();
+  const box = document.getElementById('phoneSuggestions');
+  if(!box) return;
+  if(!query){ box.innerHTML=''; return; }
+  const matches = getCustomerHistory().filter(c=>c.phone.includes(query)).slice(0,5);
+  if(matches.length===0){ box.innerHTML=''; return; }
+  box.innerHTML = `<div style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.12);z-index:20;max-height:180px;overflow-y:auto;overflow-x:hidden;margin-top:2px">
+    ${matches.map(c=>`<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #F0F1F5;font-size:12.5px" onmousedown="selectPhoneSuggestion('${c.phone}')">
+      <b>${c.phone}</b> — ${c.customerName}<div class="muted small">${c.address}</div>
+    </div>`).join('')}
+  </div>`;
+}
+function hidePhoneSuggestions(){
+  const box = document.getElementById('phoneSuggestions');
+  if(box) box.innerHTML='';
+}
+function selectPhoneSuggestion(phone){
+  const match = getCustomerHistory().find(c=>c.phone===phone);
+  if(match){
+    orderForm.phone = match.phone;
+    orderForm.customerName = match.customerName;
+    orderForm.address = match.address;
+    orderForm._foundCustomer = true;
+  }
+  refreshOrderForm();
+}
+function autofillFromPhone(phone){
+  phone = (phone||'').trim();
+  if(!phone) return;
+  const match = [...DB.orders].reverse().find(o=>o.phone && o.phone.trim()===phone);
+  if(match){
+    let changed = false;
+    if(!orderForm.customerName.trim()){ orderForm.customerName = match.customerName; changed = true; }
+    if(!orderForm.address.trim()){ orderForm.address = match.address; changed = true; }
+    orderForm.phone = phone;
+    if(changed) orderForm._foundCustomer = true;
+    refreshOrderForm();
+  }
+}
+function addOrderItem(){
+  orderForm.items.push({productId:'', name:'', qty:1, price:0});
+  refreshOrderForm();
+  const rows = document.querySelectorAll('#itemRows .item-row');
+  if(rows.length) rows[rows.length-1].scrollIntoView({block:'center', behavior:'smooth'});
+}
+function removeOrderItem(idx){ orderForm.items.splice(idx,1); refreshOrderForm(); }
+function setOrderItemProduct(idx, productId){
+  const p = DB.products.find(x=>x.id===productId);
+  orderForm.items[idx].productId = productId;
+  orderForm.items[idx].name = p?p.name:'';
+  orderForm.items[idx].price = p?p.sellPrice:0;
+  if(orderForm.type==='normal' && p && orderForm.items[idx].qty>p.stock) orderForm.items[idx].qty = p.stock;
+  refreshOrderForm();
+}
+function setOrderItemQty(idx, val){
+  orderForm.items[idx].qty = Number(val)||0;
+  updateOrderTotals();
+}
+function validateOrderItemQty(idx){
+  const it = orderForm.items[idx];
+  if(!it) return;
+  if(it.qty<0) it.qty = 0;
+  if(orderForm.type==='normal'){
+    const p = DB.products.find(x=>x.id===it.productId);
+    if(p && it.qty>p.stock){ it.qty = p.stock; alert('Số lượng vượt quá tồn kho. Đã điều chỉnh về tối đa: '+p.stock); }
+  }
+  refreshOrderForm();
+}
+function setOrderItemPrice(idx, val){ orderForm.items[idx].price = Number(val)||0; updateOrderTotals(); }
+function updateOrderTotals(){
+  const iv = document.getElementById('itemsValueDisplay'); if(iv) iv.textContent = fmt(orderItemsValue(orderForm));
+  const gt = document.getElementById('grandTotalDisplay'); if(gt) gt.textContent = fmt(orderTotal(orderForm));
+}
+function refreshOrderForm(){
+  const locked = orderForm.id && orderForm.stockDeducted;
+  document.getElementById('modalRoot').querySelector('.modal').innerHTML = orderFormHtml(locked);
+}
+function saveOrder(asDraft){
+  const f = orderForm;
+  if(!asDraft){
+    if(!f.customerName.trim() || !f.phone.trim()){ alert('Vui lòng nhập tên người nhận và số điện thoại'); return; }
+    const validItems = f.items.filter(it=>it.productId && it.qty>0);
+    if(validItems.length===0){ alert('Vui lòng thêm ít nhất 1 sản phẩm hợp lệ'); return; }
+    f.items = validItems;
+  } else {
+    f.items = f.items.filter(it=>it.productId && it.qty>0);
+    f.status = 'nhap';
+  }
+  f.updatedAt = todayISO();
+
+  if(f.id){
+    const idx = DB.orders.findIndex(x=>x.id===f.id);
+    DB.orders[idx] = f;
+    if(f.status==='xac_nhan' && !f.stockDeducted){
+      const insufficient = f.items.filter(it=>{ const p=DB.products.find(x=>x.id===it.productId); return !p||p.stock<it.qty; });
+      if(insufficient.length){ alert('Không đủ hàng trong kho cho: '+insufficient.map(i=>i.name).join(', ')); return; }
+      f.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock-=it.qty; });
+      f.stockDeducted = true;
+    }
+    if((f.status==='huy'||f.status==='nhap'||f.status==='cho_hang') && f.stockDeducted){
+      f.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock+=it.qty; });
+      f.stockDeducted = false;
+    }
+  } else {
+    f.id = uid();
+    f.code = genCode('DH','order',6);
+    f.createdAt = todayISO();
+    if(f.status==='xac_nhan'){
+      const insufficient = f.items.filter(it=>{ const p=DB.products.find(x=>x.id===it.productId); return !p||p.stock<it.qty; });
+      if(insufficient.length){ alert('Không đủ hàng trong kho cho: '+insufficient.map(i=>i.name).join(', ')); return; }
+      f.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock-=it.qty; });
+      f.stockDeducted = true;
+    }
+    DB.orders.push(f);
+  }
+  saveDB(); closeModal(); orderForm=null; renderOrdersResults(); renderNav(); if(activeTab==='dashboard') renderDashboard();
+}
+function openOrderDetail(orderId){ openOrderModal(null, orderId); }
+
+/* ======================= COMPLAINTS ======================= */
+let complaintForm = null;
+function renderComplaints(){
+  const list = [...DB.complaints].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  document.getElementById('content').innerHTML = `
+    <div class="table-wrap"><table><thead><tr>
+      <th>Ngày</th><th>Khách hàng</th><th>SĐT</th><th>Địa chỉ</th><th>Sản phẩm</th><th>SL</th><th>Hình thức đền</th><th>Lý do</th><th></th>
+    </tr></thead><tbody>
+    ${list.length? list.map(c=>`
+      <tr>
+        <td class="small">${fmtDate(c.date)}</td>
+        <td>${c.customerName}</td><td>${c.phone}</td>
+        <td class="small">${c.address}</td>
+        <td>${c.product}</td><td>${c.qty}</td>
+        <td><span class="tag" style="background:${c.compensationType==='hoan_tien'?'var(--blue-light)':'var(--amber-light)'};color:${c.compensationType==='hoan_tien'?'var(--blue)':'#946417'}">${COMP_TYPES[c.compensationType]}</span></td>
+        <td class="small">${complaintReasonText(c)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')">Chi tiết</button>
+      </tr>`).join('') : `<tr><td colspan="9" class="empty">Chưa có khiếu nại/đền hàng nào</td></tr>`}
+    </tbody></table></div>
+  `;
+}
+function openComplaintModal(){
+  complaintForm = {id:null, date:todayISO(), customerName:'', phone:'', address:'', product:'', qty:1,
+    compensationType:'hoan_tien', carrier:'', shipFee:0, shipPayer:'shop', reasonType:'loi_san_pham', reasonOther:'', note:'', refundValue:0};
+  openModal(complaintFormHtml(), true);
+}
+function complaintFormHtml(){
+  const f = complaintForm;
+  return `
+    <div class="modal-head"><h3>Tạo khiếu nại / đền hàng</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-2col">
+        <div class="form-row"><label>Khách hàng</label><input value="${f.customerName}" oninput="complaintForm.customerName=this.value"></div>
+        <div class="form-row"><label>SĐT</label><input value="${f.phone}" oninput="complaintForm.phone=this.value"></div>
+      </div>
+      <div class="form-row"><label>Địa chỉ</label><input value="${f.address}" oninput="complaintForm.address=this.value"></div>
+      <div class="form-2col">
+        <div class="form-row"><label>Sản phẩm</label>
+          <select onchange="complaintForm.product=this.value">
+            <option value="">-- Chọn sản phẩm --</option>
+            ${DB.products.map(p=>`<option value="${p.name}" ${f.product===p.name?'selected':''}>${p.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row"><label>Số lượng</label><input type="number" value="${f.qty}" oninput="complaintForm.qty=Number(this.value)||1"></div>
+      </div>
+      <div class="form-row"><label>Hình thức đền</label>
+        <select onchange="complaintForm.compensationType=this.value; refreshComplaintForm()">
+          <option value="hoan_tien" ${f.compensationType==='hoan_tien'?'selected':''}>Hoàn tiền</option>
+          <option value="gui_hang_bu" ${f.compensationType==='gui_hang_bu'?'selected':''}>Gửi hàng bù</option>
+        </select>
+      </div>
+      <div class="form-row"><label>Giá trị hoàn / đền (nếu có)</label><input type="number" value="${f.refundValue}" oninput="complaintForm.refundValue=Number(this.value)||0"></div>
+      ${f.compensationType==='gui_hang_bu'? `
+      <div class="form-2col">
+        <div class="form-row"><label>Hình thức vận chuyển</label>
+          <select onchange="complaintForm.carrier=this.value">
+            <option value="">-- Không có --</option>
+            ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${f.carrier===k?'selected':''}>${v}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-row"><label>Phí ship</label><input type="number" value="${f.shipFee}" oninput="complaintForm.shipFee=Number(this.value)||0"></div>
+      </div>
+      <div class="form-row"><label>Ai trả phí ship</label>
+        <select onchange="complaintForm.shipPayer=this.value">
+          <option value="shop" ${f.shipPayer==='shop'?'selected':''}>Shop trả</option>
+          <option value="khach" ${f.shipPayer==='khach'?'selected':''}>Khách trả</option>
+        </select>
+      </div>`:''}
+      <div class="form-row"><label>Lý do</label>
+        <select onchange="complaintForm.reasonType=this.value; refreshComplaintForm()">
+          <option value="loi_san_pham" ${f.reasonType==='loi_san_pham'?'selected':''}>Lỗi sản phẩm</option>
+          <option value="loi_van_chuyen" ${f.reasonType==='loi_van_chuyen'?'selected':''}>Lỗi vận chuyển</option>
+          <option value="khac" ${f.reasonType==='khac'?'selected':''}>Lý do khác</option>
+        </select>
+      </div>
+      ${f.reasonType==='khac'? `<div class="form-row"><label>Nhập lý do</label><textarea rows="2" oninput="complaintForm.reasonOther=this.value">${f.reasonOther}</textarea></div>` : ''}
+      <div class="form-row"><label>Ghi chú thêm</label><textarea rows="2" oninput="complaintForm.note=this.value">${f.note}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveComplaint()">Lưu</button></div>
+  `;
+}
+const REASON_LABELS = {loi_san_pham:'Lỗi sản phẩm', loi_van_chuyen:'Lỗi vận chuyển', khac:'Khác'};
+function complaintReasonText(c){ return c.reasonType==='khac' ? (c.reasonOther||'Khác') : REASON_LABELS[c.reasonType]||c.reason||''; }
+function refreshComplaintForm(){ document.getElementById('modalRoot').querySelector('.modal').innerHTML = complaintFormHtml(); }
+function saveComplaint(){
+  const f = complaintForm;
+  if(!f.customerName.trim()){ alert('Vui lòng nhập tên khách hàng'); return; }
+  f.id = uid(); f.code = genCode('KN','complaint',5);
+  DB.complaints.push(f);
+  saveDB(); closeModal(); complaintForm=null; renderComplaints();
+}
+function viewComplaint(id){
+  const c = DB.complaints.find(x=>x.id===id);
+  openModal(`
+    <div class="modal-head"><h3>Chi tiết khiếu nại — ${c.code||''}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <p><b>Khách hàng:</b> ${c.customerName} — ${c.phone}</p>
+      <p><b>Địa chỉ:</b> ${c.address}</p>
+      <p><b>Sản phẩm:</b> ${c.product} x${c.qty}</p>
+      <p><b>Hình thức đền:</b> ${COMP_TYPES[c.compensationType]} ${c.refundValue?'— '+fmt(c.refundValue):''}</p>
+      ${c.carrier? `<p><b>Vận chuyển:</b> ${CARRIERS[c.carrier]} — Phí ship ${fmt(c.shipFee)} (${c.shipPayer==='shop'?'Shop trả':'Khách trả'})</p>`:''}
+      <p><b>Lý do:</b> ${complaintReasonText(c)||'—'}</p>
+      <p><b>Ghi chú:</b> ${c.note||'—'}</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Đóng</button></div>
+  `);
+}
+
+/* ======================= REPORTS ======================= */
+let repRange = null;
+function productCost(o){ return o.items.reduce((ss,it)=>{ const p=DB.products.find(x=>x.id===it.productId); return ss+(p?p.importPrice:0)*it.qty; },0); }
+function computeProductBreakdown(from,to){
+  const completed = DB.orders.filter(o=>o.status==='hoan_tat' && new Date(o.createdAt)>=from && new Date(o.createdAt)<=to);
+  const totalRevenue = completed.reduce((s,o)=>s+orderItemsValue(o),0) || 1;
+  const rangeLen = to.getTime()-from.getTime();
+  const prevTo = new Date(from.getTime()-1);
+  const prevFrom = new Date(from.getTime()-rangeLen-1);
+  const prevCompleted = DB.orders.filter(o=>o.status==='hoan_tat' && new Date(o.createdAt)>=prevFrom && new Date(o.createdAt)<=prevTo);
+  const map = {};
+  completed.forEach(o=>o.items.forEach(it=>{
+    map[it.productId] = map[it.productId] || {qty:0, revenue:0, cost:0};
+    map[it.productId].qty += it.qty;
+    map[it.productId].revenue += it.qty*it.price;
+    const p = DB.products.find(x=>x.id===it.productId);
+    map[it.productId].cost += (p?p.importPrice:0)*it.qty;
+  }));
+  const prevMap = {};
+  prevCompleted.forEach(o=>o.items.forEach(it=>{ prevMap[it.productId] = (prevMap[it.productId]||0) + it.qty*it.price; }));
+  return Object.keys(map).map(pid=>{
+    const p = DB.products.find(x=>x.id===pid);
+    const cur = map[pid].revenue, prev = prevMap[pid]||0;
+    let trend = null;
+    if(prev>0) trend = ((cur-prev)/prev)*100;
+    else if(cur>0) trend = null; // "new"
+    return { code:p?p.code:'—', name:p?p.name:'(đã xóa)', qty:map[pid].qty, revenue:cur,
+      cost:map[pid].cost, profit:cur-map[pid].cost, share:(cur/totalRevenue)*100,
+      trend, isNew: prev===0 && cur>0 };
+  }).sort((a,b)=>b.revenue-a.revenue);
+}
+function renderReports(){
+  if(!repRange){ const now=new Date(); repRange = {from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10), to:now.toISOString().slice(0,10)}; }
+  const from = new Date(repRange.from);
+  const to = new Date(repRange.to); to.setHours(23,59,59,999);
+  const completed = DB.orders.filter(o=>o.status==='hoan_tat' && new Date(o.createdAt)>=from && new Date(o.createdAt)<=to);
+  const cancelled = DB.orders.filter(o=>o.status==='huy' && new Date(o.createdAt)>=from && new Date(o.createdAt)<=to);
+  const revenue = completed.reduce((s,o)=>s+orderItemsValue(o),0);
+  const cost = completed.reduce((s,o)=>s+productCost(o),0);
+  const profit = revenue-cost;
+  const qtySold = completed.reduce((s,o)=>s+o.items.reduce((ss,it)=>ss+it.qty,0),0);
+  const shipCollected = completed.reduce((s,o)=>s+Number(o.shipFee||0),0);
+  const uniqueCustomers = new Set(completed.map(o=>o.phone)).size;
+  const complaintsInRange = DB.complaints.filter(c=>new Date(c.date)>=from && new Date(c.date)<=to);
+  const refundTotal = complaintsInRange.filter(c=>c.compensationType==='hoan_tien').reduce((s,c)=>s+Number(c.refundValue||0),0);
+  const breakdown = computeProductBreakdown(from,to);
+
+  const days = []; let cur = new Date(from);
+  while(cur<=to && days.length<31){ days.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
+  const dayRevs = days.map(d=>{
+    const dayStart = new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    const dayEnd = new Date(dayStart); dayEnd.setHours(23,59,59,999);
+    return completed.filter(o=>new Date(o.createdAt)>=dayStart && new Date(o.createdAt)<=dayEnd).reduce((s,o)=>s+orderItemsValue(o),0);
+  });
+  const maxRev = Math.max(...dayRevs, 1);
+
+  document.getElementById('content').innerHTML = `
+    <div class="search-bar">
+      <button class="btn btn-secondary btn-sm" onclick="setRepPreset('week')">Tuần này</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRepPreset('month')">Tháng này</button>
+      <button class="btn btn-secondary btn-sm" onclick="setRepPreset('year')">Năm nay</button>
+      <span class="muted small">Từ</span><input type="date" value="${repRange.from}" onchange="repRange.from=this.value; renderReports()">
+      <span class="muted small">đến</span><input type="date" value="${repRange.to}" onchange="repRange.to=this.value; renderReports()">
+    </div>
+    <div class="grid grid-kpi">
+      <div class="card kpi accent-teal"><div class="label">Doanh thu</div><div class="value">${fmt(revenue)}</div><div class="foot">${completed.length} đơn hoàn tất</div></div>
+      <div class="card kpi accent-amber"><div class="label">Giá vốn</div><div class="value">${fmt(cost)}</div><div class="foot">Trên hàng đã bán</div></div>
+      <div class="card kpi accent-green"><div class="label">Lợi nhuận gộp</div><div class="value">${fmt(profit)}</div><div class="foot">Phí ship thu ${fmt(shipCollected)}</div></div>
+      <div class="card kpi accent-red"><div class="label">Đơn hủy / Hoàn tiền</div><div class="value">${cancelled.length} / ${fmt(refundTotal)}</div><div class="foot">${complaintsInRange.length} khiếu nại trong kỳ</div></div>
+      <div class="card kpi accent-teal"><div class="label">SL sản phẩm bán ra</div><div class="value">${qtySold}</div><div class="foot">Tổng số lượng đã bán</div></div>
+      <div class="card kpi accent-green"><div class="label">Khách hàng đã mua</div><div class="value">${uniqueCustomers}</div><div class="foot">Theo số điện thoại duy nhất</div></div>
+    </div>
+    <div class="section-title">Doanh thu theo ngày</div>
+    <div class="card">
+      <div class="bars">${dayRevs.map(r=>`<div class="bar" style="height:${Math.max(4,(r/maxRev)*120)}px"><span>${r>0?Math.round(r/1000)+'k':''}</span></div>`).join('')}</div>
+      <div style="display:flex;gap:5px;margin-top:2px">${days.map(d=>`<div class="bar-label">${d.getDate()}/${d.getMonth()+1}</div>`).join('')}</div>
+    </div>
+
+    <div class="section-title">Chi tiết theo từng sản phẩm <span class="hint">SL bán, doanh số, đóng góp % và xu hướng so với kỳ trước</span></div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Mã SP</th><th>Tên sản phẩm</th><th>SL bán</th><th>Doanh số</th><th>Giá vốn</th><th>Lợi nhuận</th><th>% Đóng góp DT</th><th>Xu hướng</th>
+    </tr></thead><tbody>
+    ${breakdown.length? breakdown.map(r=>`
+      <tr>
+        <td>${r.code}</td><td>${r.name}</td><td>${r.qty}</td><td>${fmt(r.revenue)}</td><td>${fmt(r.cost)}</td>
+        <td style="color:var(--green);font-weight:700">${fmt(r.profit)}</td>
+        <td>${r.share.toFixed(1)}%<div class="progress-bg"><div class="progress-fill" style="width:${Math.min(100,r.share)}%"></div></div></td>
+        <td>${r.isNew? '<span class="trend-flat">Mới</span>' : (r.trend===null? '<span class="trend-flat">—</span>' : (r.trend>=0? `<span class="trend-up">▲ ${r.trend.toFixed(0)}%</span>` : `<span class="trend-down">▼ ${Math.abs(r.trend).toFixed(0)}%</span>`))}</td>
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">Không có dữ liệu bán hàng trong khoảng thời gian này</td></tr>`}
+    </tbody></table></div>
+
+    <div class="section-title">Chi tiết đơn hoàn tất trong kỳ</div>
+    <div class="table-wrap"><table><thead><tr><th>Mã đơn</th><th>Ngày</th><th>Khách hàng</th><th>Giá trị</th><th>Giá vốn</th><th>Lợi nhuận</th></tr></thead><tbody>
+    ${completed.length? completed.map(o=>{
+      const c = productCost(o); const v = orderItemsValue(o);
+      return `<tr><td>${o.code}</td><td class="small">${fmtDate(o.createdAt)}</td><td>${o.customerName}</td><td>${fmt(v)}</td><td>${fmt(c)}</td><td style="color:var(--green);font-weight:700">${fmt(v-c)}</td></tr>`;
+    }).join('') : `<tr><td colspan="6" class="empty">Không có đơn hoàn tất trong khoảng thời gian này</td></tr>`}
+    </tbody></table></div>
+  `;
+}
+function setRepPreset(kind){
+  const now = new Date();
+  if(kind==='week'){ const d=new Date(now); d.setDate(now.getDate()-now.getDay()); repRange={from:d.toISOString().slice(0,10), to:now.toISOString().slice(0,10)}; }
+  if(kind==='month'){ repRange={from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10), to:now.toISOString().slice(0,10)}; }
+  if(kind==='year'){ repRange={from:new Date(now.getFullYear(),0,1).toISOString().slice(0,10), to:now.toISOString().slice(0,10)}; }
+  renderReports();
+}
+
+/* ======================= EXPORTS ======================= */
+function exportCarrierExcel(carrier){
+  const orders = DB.orders.filter(o=>o.carrier===carrier && o.status!=='huy' && o.status!=='nhap');
+  if(orders.length===0){ alert('Không có đơn hàng phù hợp để xuất cho '+CARRIERS[carrier]); return; }
+  const rows = orders.map(o=>({
+    'Mã đơn hàng': o.code, 'Tên người nhận': o.customerName, 'Số điện thoại': o.phone, 'Địa chỉ chi tiết': o.address,
+    'Sản phẩm': o.items.map(i=>i.name+' x'+i.qty).join(', '), 'Số lượng': o.items.reduce((s,i)=>s+i.qty,0),
+    'Giá trị hàng (COD)': o.paymentMethod==='cod' ? orderTotal(o) : 0, 'Phí ship': o.shipFee,
+    'Mã vận đơn': o.trackingCode||'', 'Ghi chú': o.note||'',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'DonHang');
+  XLSX.writeFile(wb, `don-hang-${carrier}-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function exportPreorderNeeds(){
+  const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Cần nhập thêm':r.gap}));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'CanDatHang');
+  XLSX.writeFile(wb, `can-dat-hang-preorder-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+async function exportBackup(){
+  const blob = new Blob([JSON.stringify(DB,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `mini-erp-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+function importBackup(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      if(!data.products || !data.orders) throw new Error('invalid');
+      if(!confirm('Phục hồi sẽ GHI ĐÈ toàn bộ dữ liệu hiện tại. Tiếp tục?')) return;
+      DB = data; saveDB(); renderNav(); navigate(activeTab);
+      alert('Phục hồi dữ liệu thành công!');
+    }catch(err){ alert('File backup không hợp lệ.'); }
+  };
+  reader.readAsText(file);
+}
+
+/* ======================= MODAL HELPERS ======================= */
+function openModal(innerHtml, wide){
+  document.getElementById('modalRoot').innerHTML = `
+    <div class="overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal" style="${wide?'max-width:680px':''}">${innerHtml}</div>
+    </div>`;
+}
+function closeModal(){ document.getElementById('modalRoot').innerHTML=''; }
+
+/* ======================= INIT ======================= */
+async function initApp(){
+  await loadSheetConfig();
+  renderNav();
+  navigate('dashboard');
+}
+initApp();
+</script>
+</body>
+</html>
