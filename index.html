@@ -1026,7 +1026,11 @@ function updateOrderTotals(){
 }
 function refreshOrderForm(){
   const locked = orderForm.id && orderForm.stockDeducted;
+  const modalBody = document.querySelector('#modalRoot .modal-body');
+  const scrollPos = modalBody ? modalBody.scrollTop : 0;
   document.getElementById('modalRoot').querySelector('.modal').innerHTML = orderFormHtml(locked);
+  const newModalBody = document.querySelector('#modalRoot .modal-body');
+  if(newModalBody) newModalBody.scrollTop = scrollPos;
 }
 function saveOrder(asDraft){
   const f = orderForm;
