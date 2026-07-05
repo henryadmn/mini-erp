@@ -1143,16 +1143,33 @@ function updateComplaintRefundStatus(id, val){
 }
 function updateComplaintShipStatus(id, val){
   const c = DB.complaints.find(x=>x.id===id); if(!c) return;
+  if(val==='huy' && c.stockDeducted){
+    c.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock+=it.qty; });
+    c.stockDeducted = false;
+  } else if(val!=='huy' && !c.stockDeducted){
+    const insufficient = c.items.filter(it=>{ const p=DB.products.find(x=>x.id===it.productId); return !p||p.stock<it.qty; });
+    if(insufficient.length){ alert('Không đủ hàng trong kho cho: '+insufficient.map(i=>i.name).join(', ')); renderComplaints(); return; }
+    c.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock-=it.qty; });
+    c.stockDeducted = true;
+  }
   c.statusShip = val; c.updatedAt = todayISO();
-  saveDB(); renderComplaints();
+  saveDB(); renderComplaints(); renderNav();
 }
 function openComplaintModal(existingId){
   const existing = existingId? DB.complaints.find(x=>x.id===existingId) : null;
   complaintForm = existing? JSON.parse(JSON.stringify(existing)) : {id:null, orderId:'', customerName:'', phone:'', address:'', items:[],
-    compensationType:'hoan_tien', refundValue:0,
+    compensationType:'hoan_tien', refundValue:0, stockDeducted:false,
     carrier:'', trackingCode:'', shipFee:0, shipPayer:'shop', statusShip:'cho_gui', statusRefund:'cho_xac_nhan',
     reasonType:'loi_san_pham', reasonOther:'', note:'', createdAt: todayISO(), updatedAt: todayISO()};
   openModal(complaintFormHtml(), true);
+}
+function complaintCompCost(f){
+  const itemsCost = f.items.reduce((s,it)=>{ const p=DB.products.find(x=>x.id===it.productId); return s+(p?p.importPrice:0)*it.qty; },0);
+  return itemsCost + Number(f.shipFee||0);
+}
+function updateComplaintCompCostDisplay(){
+  const el = document.getElementById('compCostDisplay');
+  if(el) el.textContent = fmt(complaintCompCost(complaintForm));
 }
 function showOrderSuggestions(query){
   const box = document.getElementById('orderSuggestBox');
@@ -1195,7 +1212,7 @@ function complaintItemRowsHtml(){
           onblur="setTimeout(()=>hideCompProductSuggestions(${idx}),150)">
         <div id="compProdSuggest_${idx}"></div>
       </div>
-      <div><input type="number" min="1" value="${it.qty}" oninput="complaintForm.items[${idx}].qty=Number(this.value)||0"></div>
+      <div><input type="number" min="1" value="${it.qty}" oninput="complaintForm.items[${idx}].qty=Number(this.value)||0; updateComplaintCompCostDisplay()"></div>
       <div><button class="rm-item" onclick="complaintForm.items.splice(${idx},1); refreshComplaintForm()">✕</button></div>
     </div>`;
   }).join('');
@@ -1261,7 +1278,11 @@ function complaintFormHtml(){
           <option value="gui_hang_bu" ${f.compensationType==='gui_hang_bu'?'selected':''}>Gửi hàng bù</option>
         </select>
       </div>
-      <div class="form-row"><label>Giá trị hoàn / đền (nếu có)</label><input type="number" value="${f.refundValue}" oninput="complaintForm.refundValue=Number(this.value)||0"></div>
+      <div class="form-row"><label>${f.compensationType==='gui_hang_bu'? 'Tổng giá trị bù (tự tính = giá nhập hàng bù + phí ship)' : 'Giá trị hoàn tiền (nhập tay)'}</label>
+        ${f.compensationType==='gui_hang_bu'
+          ? `<div class="totalbox" style="background:var(--amber-light)"><span>Tự động tính</span><b id="compCostDisplay" style="color:#946417">${fmt(complaintCompCost(f))}</b></div>`
+          : `<input type="number" value="${f.refundValue}" oninput="complaintForm.refundValue=Number(this.value)||0">`}
+      </div>
 
       ${f.compensationType==='gui_hang_bu'? `
       <div class="form-2col">
@@ -1271,7 +1292,7 @@ function complaintFormHtml(){
             ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${f.carrier===k?'selected':''}>${v}</option>`).join('')}
           </select>
         </div>
-        <div class="form-row"><label>Phí ship</label><input type="number" value="${f.shipFee}" oninput="complaintForm.shipFee=Number(this.value)||0"></div>
+        <div class="form-row"><label>Phí ship</label><input type="number" value="${f.shipFee}" oninput="complaintForm.shipFee=Number(this.value)||0; updateComplaintCompCostDisplay()"></div>
       </div>
       ${(f.carrier==='shopee_express'||f.carrier==='viettel_post')? `
       <div class="form-row"><label>Mã vận đơn</label><input value="${f.trackingCode}" oninput="complaintForm.trackingCode=this.value" placeholder="Nhập mã vận đơn"></div>`:''}
@@ -1321,6 +1342,24 @@ function saveComplaint(){
   if(!f.customerName.trim() || !f.phone.trim()){ alert('Vui lòng nhập tên khách hàng và số điện thoại'); return; }
   f.items = f.items.filter(it=>it.productId && it.qty>0);
   f.updatedAt = todayISO();
+
+  if(f.compensationType==='gui_hang_bu'){
+    f.refundValue = complaintCompCost(f);
+    if(f.statusShip!=='huy' && !f.stockDeducted){
+      const insufficient = f.items.filter(it=>{ const p=DB.products.find(x=>x.id===it.productId); return !p||p.stock<it.qty; });
+      if(insufficient.length){ alert('Không đủ hàng trong kho để gửi bù cho: '+insufficient.map(i=>i.name).join(', ')); return; }
+      f.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock-=it.qty; });
+      f.stockDeducted = true;
+    } else if(f.statusShip==='huy' && f.stockDeducted){
+      f.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock+=it.qty; });
+      f.stockDeducted = false;
+    }
+  } else if(f.stockDeducted){
+    // đã đổi từ gửi hàng bù sang hoàn tiền — hồi lại kho đã trừ trước đó
+    f.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock+=it.qty; });
+    f.stockDeducted = false;
+  }
+
   if(f.id){
     const idx = DB.complaints.findIndex(x=>x.id===f.id);
     DB.complaints[idx] = f;
@@ -1328,7 +1367,7 @@ function saveComplaint(){
     f.id = uid(); f.code = genCode('HB','complaint',5);
     DB.complaints.push(f);
   }
-  saveDB(); closeModal(); complaintForm=null; renderComplaints();
+  saveDB(); closeModal(); complaintForm=null; renderComplaints(); renderNav();
 }
 
 /* ======================= REPORTS ======================= */
@@ -1368,14 +1407,16 @@ function renderReports(){
   const to = new Date(repRange.to); to.setHours(23,59,59,999);
   const completed = DB.orders.filter(o=>o.status==='hoan_tat' && new Date(o.createdAt)>=from && new Date(o.createdAt)<=to);
   const cancelled = DB.orders.filter(o=>o.status==='huy' && new Date(o.createdAt)>=from && new Date(o.createdAt)<=to);
-  const revenue = completed.reduce((s,o)=>s+orderItemsValue(o),0);
+  const grossRevenue = completed.reduce((s,o)=>s+orderItemsValue(o),0);
   const cost = completed.reduce((s,o)=>s+productCost(o),0);
-  const profit = revenue-cost;
   const qtySold = completed.reduce((s,o)=>s+o.items.reduce((ss,it)=>ss+it.qty,0),0);
   const shipCollected = completed.reduce((s,o)=>s+Number(o.shipFee||0),0);
   const uniqueCustomers = new Set(completed.map(o=>o.phone)).size;
-  const complaintsInRange = DB.complaints.filter(c=>new Date(c.date)>=from && new Date(c.date)<=to);
-  const refundTotal = complaintsInRange.filter(c=>c.compensationType==='hoan_tien').reduce((s,c)=>s+Number(c.refundValue||0),0);
+  const complaintsInRange = DB.complaints.filter(c=>new Date(c.createdAt)>=from && new Date(c.createdAt)<=to);
+  const activeCompensations = complaintsInRange.filter(c=>complaintStatusKey(c)!=='huy');
+  const compensationDeduction = activeCompensations.reduce((s,c)=>s+Number(c.refundValue||0),0);
+  const revenue = grossRevenue - compensationDeduction;
+  const profit = revenue-cost;
   const breakdown = computeProductBreakdown(from,to);
 
   const days = []; let cur = new Date(from);
@@ -1396,10 +1437,11 @@ function renderReports(){
       <span class="muted small">đến</span><input type="date" value="${repRange.to}" onchange="repRange.to=this.value; renderReports()">
     </div>
     <div class="grid grid-kpi">
-      <div class="card kpi accent-teal"><div class="label">Doanh thu</div><div class="value">${fmt(revenue)}</div><div class="foot">${completed.length} đơn hoàn tất</div></div>
+      <div class="card kpi accent-teal"><div class="label">Doanh thu (đã trừ đền bù)</div><div class="value">${fmt(revenue)}</div><div class="foot">Gộp trước đền bù: ${fmt(grossRevenue)}</div></div>
       <div class="card kpi accent-amber"><div class="label">Giá vốn</div><div class="value">${fmt(cost)}</div><div class="foot">Trên hàng đã bán</div></div>
       <div class="card kpi accent-green"><div class="label">Lợi nhuận gộp</div><div class="value">${fmt(profit)}</div><div class="foot">Phí ship thu ${fmt(shipCollected)}</div></div>
-      <div class="card kpi accent-red"><div class="label">Đơn hủy / Hoàn tiền</div><div class="value">${cancelled.length} / ${fmt(refundTotal)}</div><div class="foot">${complaintsInRange.length} khiếu nại trong kỳ</div></div>
+      <div class="card kpi accent-red"><div class="label">Chi phí đền bù</div><div class="value">${fmt(compensationDeduction)}</div><div class="foot">${activeCompensations.length} khiếu nại (đã trừ vào doanh thu)</div></div>
+      <div class="card kpi accent-red"><div class="label">Đơn hủy</div><div class="value">${cancelled.length}</div><div class="foot">Trong kỳ</div></div>
       <div class="card kpi accent-teal"><div class="label">SL sản phẩm bán ra</div><div class="value">${qtySold}</div><div class="foot">Tổng số lượng đã bán</div></div>
       <div class="card kpi accent-green"><div class="label">Khách hàng đã mua</div><div class="value">${uniqueCustomers}</div><div class="foot">Theo số điện thoại duy nhất</div></div>
     </div>
