@@ -1131,7 +1131,7 @@ function renderComplaints(){
         <td class="small">${fmtDate(c.updatedAt||c.createdAt)}</td>
         <td>${c.compensationType==='hoan_tien'? selectHtml(c.id, c.statusRefund, REFUND_STATUSES, 'updateComplaintRefundStatus') : '<span class="muted small">—</span>'}</td>
         <td>${c.compensationType==='gui_hang_bu'? selectHtml(c.id, c.statusShip, SHIP_COMP_STATUSES, 'updateComplaintShipStatus') : '<span class="muted small">—</span>'}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')">Chi tiết</button></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openComplaintModal('${c.id}')">Chi tiết</button></td>
       </tr>`).join('') : `<tr><td colspan="9" class="empty">Chưa có khiếu nại/đền hàng nào</td></tr>`}
     </tbody></table></div>
   `;
@@ -1146,8 +1146,9 @@ function updateComplaintShipStatus(id, val){
   c.statusShip = val; c.updatedAt = todayISO();
   saveDB(); renderComplaints();
 }
-function openComplaintModal(){
-  complaintForm = {id:null, orderId:'', customerName:'', phone:'', address:'', items:[],
+function openComplaintModal(existingId){
+  const existing = existingId? DB.complaints.find(x=>x.id===existingId) : null;
+  complaintForm = existing? JSON.parse(JSON.stringify(existing)) : {id:null, orderId:'', customerName:'', phone:'', address:'', items:[],
     compensationType:'hoan_tien', refundValue:0,
     carrier:'', trackingCode:'', shipFee:0, shipPayer:'shop', statusShip:'cho_gui', statusRefund:'cho_xac_nhan',
     reasonType:'loi_san_pham', reasonOther:'', note:'', createdAt: todayISO(), updatedAt: todayISO()};
@@ -1228,7 +1229,7 @@ function complaintFormHtml(){
   const f = complaintForm;
   const linkedOrder = f.orderId? DB.orders.find(x=>x.id===f.orderId) : null;
   return `
-    <div class="modal-head"><h3>Tạo khiếu nại / đền hàng</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-head"><h3>${f.id? 'Chi tiết / Sửa hàng bù — '+f.code : 'Tạo khiếu nại / đền hàng'}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="form-row" style="position:relative">
         <label>Mã đơn hàng gốc</label>
@@ -1319,31 +1320,15 @@ function saveComplaint(){
   const f = complaintForm;
   if(!f.customerName.trim() || !f.phone.trim()){ alert('Vui lòng nhập tên khách hàng và số điện thoại'); return; }
   f.items = f.items.filter(it=>it.productId && it.qty>0);
-  f.id = uid(); f.code = genCode('HB','complaint',5);
   f.updatedAt = todayISO();
-  DB.complaints.push(f);
+  if(f.id){
+    const idx = DB.complaints.findIndex(x=>x.id===f.id);
+    DB.complaints[idx] = f;
+  } else {
+    f.id = uid(); f.code = genCode('HB','complaint',5);
+    DB.complaints.push(f);
+  }
   saveDB(); closeModal(); complaintForm=null; renderComplaints();
-}
-function viewComplaint(id){
-  const c = DB.complaints.find(x=>x.id===id);
-  const linkedOrder = c.orderId? DB.orders.find(x=>x.id===c.orderId) : null;
-  openModal(`
-    <div class="modal-head"><h3>Chi tiết hàng bù — ${c.code||''}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
-    <div class="modal-body">
-      ${linkedOrder? `<p><b>Đơn hàng gốc:</b> ${linkedOrder.code}</p>` : ''}
-      <p><b>Khách hàng:</b> ${c.customerName} — ${c.phone}</p>
-      <p><b>Địa chỉ:</b> ${c.address}</p>
-      <p><b>Sản phẩm:</b> ${(c.items&&c.items.length)? c.items.map(i=>i.name+' x'+i.qty).join(', ') : '—'}</p>
-      <p><b>Hình thức đền:</b> ${COMP_TYPES[c.compensationType]} ${c.refundValue?'— '+fmt(c.refundValue):''}</p>
-      ${c.compensationType==='gui_hang_bu'? `
-        <p><b>Vận chuyển:</b> ${c.carrier? CARRIERS[c.carrier] : '—'} ${c.trackingCode? '— Mã: '+c.trackingCode : ''} — Phí ship ${fmt(c.shipFee)} (${c.shipPayer==='shop'?'Shop trả':'Khách trả'})</p>
-        <p><b>Trạng thái:</b> ${tagHtml(c.statusShip, SHIP_COMP_STATUSES)}</p>
-      ` : `<p><b>Trạng thái:</b> ${tagHtml(c.statusRefund, REFUND_STATUSES)}</p>`}
-      <p><b>Lý do:</b> ${complaintReasonText(c)||'—'}</p>
-      <p><b>Ghi chú:</b> ${c.note||'—'}</p>
-    </div>
-    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Đóng</button></div>
-  `);
 }
 
 /* ======================= REPORTS ======================= */
