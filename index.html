@@ -161,7 +161,7 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 let DB = { products: [], orders: [], complaints: [], seq:{product:0, order:0, complaint:0} };
 let activeTab = 'dashboard';
 let inv = { search:'' };
-let ordUi = { search:'' };
+let ordUi = { search:'', statusFilter:'', paymentFilter:'', carrierFilter:'' };
 let sheetConfig = { clientId:'', spreadsheetId:'' };
 let gTokenClient = null;
 let gAccessToken = null;
@@ -690,6 +690,19 @@ function renderOrders(){
   document.getElementById('content').innerHTML = `
     <div class="search-bar">
       <input type="text" id="ordSearchInput" placeholder="🔍 Tìm theo tên khách hoặc SĐT..." value="${ordUi.search}" oninput="ordUi.search=this.value; renderOrdersResults()">
+      <select class="inline-select" style="max-width:180px" onchange="ordUi.statusFilter=this.value; renderOrdersResults()">
+        <option value="">Tất cả trạng thái đơn</option>
+        ${ORDER_STATUSES.map(s=>`<option value="${s.key}" ${ordUi.statusFilter===s.key?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+      <select class="inline-select" style="max-width:180px" onchange="ordUi.paymentFilter=this.value; renderOrdersResults()">
+        <option value="">Tất cả thanh toán</option>
+        ${PAYMENT_STATUSES.map(s=>`<option value="${s.key}" ${ordUi.paymentFilter===s.key?'selected':''}>${s.label}</option>`).join('')}
+      </select>
+      <select class="inline-select" style="max-width:170px" onchange="ordUi.carrierFilter=this.value; renderOrdersResults()">
+        <option value="">Tất cả vận chuyển</option>
+        ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${ordUi.carrierFilter===k?'selected':''}>${v}</option>`).join('')}
+      </select>
+      ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
       <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
       <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
       <span class="muted small" id="ordCount"></span>
@@ -701,7 +714,12 @@ function renderOrders(){
 function renderOrdersResults(){
   const readiness = getPreorderReadiness();
   const q = ordUi.search.toLowerCase();
-  const list = [...DB.orders].filter(o=> (o.customerName+' '+o.phone+' '+o.code).toLowerCase().includes(q))
+  const list = [...DB.orders].filter(o=>
+      (o.customerName+' '+o.phone+' '+o.code).toLowerCase().includes(q)
+      && (!ordUi.statusFilter || o.status===ordUi.statusFilter)
+      && (!ordUi.paymentFilter || o.paymentStatus===ordUi.paymentFilter)
+      && (!ordUi.carrierFilter || o.carrier===ordUi.carrierFilter)
+    )
     .sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
   document.getElementById('ordCount').textContent = list.length+' đơn';
   document.getElementById('ordResults').innerHTML = `
