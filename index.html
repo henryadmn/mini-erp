@@ -489,8 +489,8 @@ function renderDashboard(){
       </div>
     </div>
     <div class="section-title">Khiếu nại / đền hàng gần đây</div>
-    <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Sản phẩm</th><th>Hình thức</th></tr></thead><tbody>
-    ${openComplaints.length? openComplaints.map(c=>`<tr><td>${c.customerName}</td><td>${complaintDescription(c)}</td><td>${COMP_TYPES[c.compensationType]}</td></tr>`).join('') : `<tr><td colspan="3" class="empty">Chưa có khiếu nại nào</td></tr>`}
+    <div class="table-wrap"><table><thead><tr><th>Khách hàng</th><th>Sản phẩm</th><th>Hình thức</th><th>Trạng thái</th></tr></thead><tbody>
+    ${openComplaints.length? openComplaints.map(c=>`<tr><td>${c.customerName}</td><td>${complaintDescription(c)}</td><td>${COMP_TYPES[c.compensationType]}</td><td>${c.compensationType==='hoan_tien'? tagHtml(c.statusRefund, REFUND_STATUSES) : tagHtml(c.statusShip, SHIP_COMP_STATUSES)}</td></tr>`).join('') : `<tr><td colspan="4" class="empty">Chưa có khiếu nại nào</td></tr>`}
     </tbody></table></div>
   `;
 }
