@@ -86,7 +86,7 @@ tr:hover td{background:#FAFBFD;}
 .small{font-size:11px;}
 .search-bar{display:flex;gap:9px;margin-bottom:12px;flex-wrap:wrap;align-items:center;}
 .search-bar input[type=text]{padding:9px 12px;border:1px solid var(--border);border-radius:8px;flex:1;min-width:180px;max-width:320px;}
-select.inline-select{padding:5px 4px;border-radius:6px;border:1px solid var(--border);font-size:11px;font-weight:600;width:100%;max-width:100%;box-sizing:border-box;}
+select.inline-select{padding:5px 2px;border-radius:6px;border:1px solid var(--border);font-size:10.5px;font-weight:600;width:100%;max-width:100%;box-sizing:border-box;}
 
 /* MODAL */
 .overlay{position:fixed;inset:0;background:rgba(15,20,35,.5);display:flex;align-items:flex-start;justify-content:center;padding:30px 14px;overflow:auto;z-index:50;}
@@ -791,10 +791,10 @@ function renderOrdersResults(){
   document.getElementById('ordCount').textContent = list.length+' đơn';
   document.getElementById('ordResults').innerHTML = `
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
-      <col style="width:11%"><col style="width:7%"><col style="width:7%"><col style="width:15%"><col style="width:14%">
-      <col style="width:11%"><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:9%">
+      <col style="width:9%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+      <col style="width:9%"><col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:10%">
     </colgroup><thead><tr>
-      <th>Mã đơn</th><th>Mã vận đơn</th><th>Vận chuyển</th><th>Khách hàng</th><th>Sản phẩm</th><th>Giá trị</th><th>Trạng thái đơn</th><th>Thanh toán</th><th>Cập nhật lần cuối</th><th></th>
+      <th>Mã đơn</th><th>Mã vận đơn</th><th>Vận chuyển</th><th>Khách hàng</th><th>Sản phẩm</th><th>Giá trị</th><th>Trạng thái đơn</th><th>Thanh toán</th><th>Thao tác</th><th>Cập nhật lần cuối</th>
     </tr></thead><tbody>
     ${list.length? list.map(o=>`
       <tr>
@@ -806,12 +806,16 @@ function renderOrdersResults(){
         <td style="font-weight:700;font-size:13.5px;white-space:nowrap">${fmt(orderTotal(o))}</td>
         <td>${selectHtml(o.id,o.status,ORDER_STATUSES,'updateOrderStatus')}</td>
         <td>${selectHtml(o.id,o.paymentStatus,PAYMENT_STATUSES,'updatePaymentStatus')}</td>
-        <td class="small">${fmtDate(o.updatedAt||o.createdAt)}</td>
-        <td style="white-space:nowrap">
-          <button class="btn btn-ghost btn-sm" onclick="openOrderDetail('${o.id}')">Chi tiết</button>
-          ${o.threadsLink? `<a class="btn btn-ghost btn-sm" href="${o.threadsLink}" target="_blank" rel="noopener" style="display:inline-block">💬 Threads</a>` : ''}
-          ${o.phone? `<a class="btn btn-ghost btn-sm" href="${zaloLink(o.phone)}" target="_blank" rel="noopener" style="display:inline-block">💬 Zalo</a>` : ''}
+        <td>
+          <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+            <button class="btn btn-ghost btn-sm" onclick="openOrderDetail('${o.id}')" style="width:100%">Chi tiết</button>
+            <div style="display:flex;gap:4px">
+              ${o.threadsLink? `<a href="${o.threadsLink}" target="_blank" rel="noopener" title="Mở chat Threads" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--teal-light);border-radius:6px;text-decoration:none;font-size:13px">💬</a>` : ''}
+              ${o.phone? `<a href="${zaloLink(o.phone)}" target="_blank" rel="noopener" title="Mở chat Zalo" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;background:var(--blue-light);border-radius:6px;text-decoration:none;font-size:13px">💬</a>` : ''}
+            </div>
+          </div>
         </td>
+        <td class="small">${fmtDate(o.updatedAt||o.createdAt)}</td>
       </tr>`).join('') : `<tr><td colspan="10" class="empty">Chưa có đơn hàng nào</td></tr>`}
     </tbody></table></div>
   `;
