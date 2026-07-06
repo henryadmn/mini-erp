@@ -721,6 +721,13 @@ function openPriceHistoryModal(productId){
 let orderForm = null;
 function orderItemsValue(o){ return o.items.reduce((s,it)=>s+it.qty*it.price,0); }
 function orderTotal(o){ return orderItemsValue(o) + Number(o.shipFee||0) - Number(o.discount||0); }
+function zaloLink(phone){
+  let digits = (phone||'').replace(/\D/g,'');
+  if(!digits) return '';
+  if(digits.startsWith('0')) digits = '84'+digits.slice(1);
+  else if(!digits.startsWith('84')) digits = '84'+digits;
+  return 'https://zalo.me/'+digits;
+}
 
 function getPreorderReadiness(){
   const pendingByProduct = {};
@@ -784,8 +791,8 @@ function renderOrdersResults(){
   document.getElementById('ordCount').textContent = list.length+' đơn';
   document.getElementById('ordResults').innerHTML = `
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
-      <col style="width:11%"><col style="width:8%"><col style="width:8%"><col style="width:16%"><col style="width:16%">
-      <col style="width:12%"><col style="width:11%"><col style="width:9%"><col style="width:9%"><col style="width:6%">
+      <col style="width:11%"><col style="width:7%"><col style="width:7%"><col style="width:15%"><col style="width:14%">
+      <col style="width:11%"><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:9%">
     </colgroup><thead><tr>
       <th>Mã đơn</th><th>Mã vận đơn</th><th>Vận chuyển</th><th>Khách hàng</th><th>Sản phẩm</th><th>Giá trị</th><th>Trạng thái đơn</th><th>Thanh toán</th><th>Cập nhật lần cuối</th><th></th>
     </tr></thead><tbody>
@@ -800,7 +807,11 @@ function renderOrdersResults(){
         <td>${selectHtml(o.id,o.status,ORDER_STATUSES,'updateOrderStatus')}</td>
         <td>${selectHtml(o.id,o.paymentStatus,PAYMENT_STATUSES,'updatePaymentStatus')}</td>
         <td class="small">${fmtDate(o.updatedAt||o.createdAt)}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="openOrderDetail('${o.id}')">Chi tiết</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="openOrderDetail('${o.id}')">Chi tiết</button>
+          ${o.threadsLink? `<a class="btn btn-ghost btn-sm" href="${o.threadsLink}" target="_blank" rel="noopener" style="display:inline-block">💬 Threads</a>` : ''}
+          ${o.phone? `<a class="btn btn-ghost btn-sm" href="${zaloLink(o.phone)}" target="_blank" rel="noopener" style="display:inline-block">💬 Zalo</a>` : ''}
+        </td>
       </tr>`).join('') : `<tr><td colspan="10" class="empty">Chưa có đơn hàng nào</td></tr>`}
     </tbody></table></div>
   `;
@@ -830,7 +841,7 @@ function updatePaymentStatus(orderId, newStatus){
 function openOrderModal(type, existingId){
   const existing = existingId? DB.orders.find(x=>x.id===existingId) : null;
   orderForm = existing? JSON.parse(JSON.stringify(existing)) : {
-    id:null, type: type||'normal', priority:'binh_thuong', customerName:'', phone:'', address:'',
+    id:null, type: type||'normal', priority:'binh_thuong', customerName:'', phone:'', address:'', threadsLink:'',
     items:[{productId:'', name:'', qty:1, price:0}], carrier:'shopee_express', trackingCode:'', paymentMethod:'cod', shipFee:0, discount:0,
     paymentStatus:'chua_tt', status: (type==='preorder'?'cho_hang':'xac_nhan'), note:'', stockDeducted:false, createdAt: todayISO(), updatedAt: todayISO(),
   };
@@ -861,6 +872,7 @@ function orderFormHtml(itemsLocked){
         </div>
       </div>
       <div class="form-row"><label>Địa chỉ chi tiết</label><input value="${f.address}" oninput="orderForm.address=this.value"></div>
+      <div class="form-row"><label>Link chat Threads (dán link đoạn chat với khách)</label><input value="${f.threadsLink||''}" oninput="orderForm.threadsLink=this.value" placeholder="https://www.threads.net/..."></div>
       ${f._foundCustomer? `<div class="hint" style="color:var(--green);margin-top:-8px;margin-bottom:12px">✓ Đã tìm thấy khách hàng cũ — tự động điền tên & địa chỉ</div>` : ''}
 
       <div class="form-row">
