@@ -517,10 +517,15 @@ function renderInventoryResults(){
       <span class="muted small">Tổng giá trị tồn kho toàn bộ</span><b style="font-size:17px;color:var(--teal)">${fmt(totalInvValue)}</b>
     </div>
     <div class="table-wrap"><table><thead><tr>
-      <th>Mã SP</th><th>Tên sản phẩm</th><th>Giá nhập (TB)</th><th>Tồn kho</th><th>Tổng giá trị tồn kho</th><th>Lịch sử nhập</th><th>Thao tác</th>
+      <th></th><th>Mã SP</th><th>Tên sản phẩm</th><th>Giá nhập (TB)</th><th>Tồn kho</th><th>Tổng giá trị tồn kho</th><th>Lịch sử nhập</th><th>Thao tác</th>
     </tr></thead><tbody>
     ${list.length? list.map(p=>`
       <tr>
+        <td style="width:44px">
+          <div style="width:36px;height:36px;border-radius:7px;overflow:hidden;background:#F8F9FC;border:1px solid var(--border);display:flex;align-items:center;justify-content:center">
+            ${p.image? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover">` : `<span style="font-size:16px">📦</span>`}
+          </div>
+        </td>
         <td><b>${p.code}</b></td>
         <td>${p.name}</td>
         <td>${fmt(p.importPrice)}</td>
@@ -533,7 +538,7 @@ function renderInventoryResults(){
           <button class="btn btn-secondary btn-sm" onclick="openProductModal('${p.id}')">Sửa</button>
           <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Xóa</button>
         </td>
-      </tr>`).join('') : `<tr><td colspan="7" class="empty">Chưa có sản phẩm nào — bấm "+ Thêm sản phẩm" để bắt đầu</td></tr>`}
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">Chưa có sản phẩm nào — bấm "+ Thêm sản phẩm" để bắt đầu</td></tr>`}
     </tbody></table></div>
   `;
   const needs = computePreorderNeeds();
@@ -555,16 +560,56 @@ function computePreorderNeeds(){
     return {code:p.code, name:p.name, stock:p.stock, needed:map[pid], gap:Math.max(0, map[pid]-p.stock)};
   }).filter(Boolean);
 }
+let productModalImage = '';
 function openProductModal(productId){
   const p = productId? DB.products.find(x=>x.id===productId) : null;
+  productModalImage = p? (p.image||'') : '';
   openModal(`
-    <div class="modal-head"><h3>${p?'Sửa tên sản phẩm':'Thêm sản phẩm mới'}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-head"><h3>${p?'Sửa sản phẩm':'Thêm sản phẩm mới'}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
       <div class="form-row"><label>Tên sản phẩm</label><input id="f_name" value="${p?p.name:''}" placeholder="VD: Áo thun basic - Trắng"></div>
+      <div class="form-row">
+        <label>Ảnh sản phẩm (không bắt buộc)</label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div id="imgPreviewBox" style="width:56px;height:56px;border-radius:8px;border:1px solid var(--border);background:#F8F9FC;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            ${productModalImage? `<img id="imgPreview" src="${productModalImage}" style="width:100%;height:100%;object-fit:cover">` : `<span id="imgPreview" style="font-size:20px">📦</span>`}
+          </div>
+          <input type="file" accept="image/*" onchange="handleProductImageSelect(this)">
+          ${productModalImage? `<button class="btn btn-ghost btn-sm" onclick="clearProductImage()">Xóa ảnh</button>` : ''}
+        </div>
+        <div class="hint">Ảnh sẽ tự thu nhỏ để hiển thị gọn trong danh sách kho.</div>
+      </div>
       ${p? '' : `<div class="hint" style="margin-top:-6px;color:var(--muted);font-size:11.5px">Sau khi tạo, vào "Nhập thêm hàng" để nhập số lượng & giá nhập, và vào tab "Giá bán" để đặt giá bán.</div>`}
     </div>
     <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveProductName(${p?`'${p.id}'`:'null'})">Lưu</button></div>
   `);
+}
+function handleProductImageSelect(input){
+  const file = input.files && input.files[0];
+  if(!file) return;
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    img.onload = ()=>{
+      const size = 96;
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const scale = Math.max(size/img.width, size/img.height);
+      const w = img.width*scale, h = img.height*scale;
+      ctx.drawImage(img, (size-w)/2, (size-h)/2, w, h);
+      productModalImage = canvas.toDataURL('image/jpeg', 0.7);
+      const box = document.getElementById('imgPreviewBox');
+      if(box) box.innerHTML = `<img id="imgPreview" src="${productModalImage}" style="width:100%;height:100%;object-fit:cover">`;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function clearProductImage(){
+  productModalImage = '';
+  const box = document.getElementById('imgPreviewBox');
+  if(box) box.innerHTML = `<span id="imgPreview" style="font-size:20px">📦</span>`;
 }
 function saveProductName(id){
   const name = document.getElementById('f_name').value.trim();
@@ -572,9 +617,9 @@ function saveProductName(id){
   const clash = DB.products.find(x=>x.id!==id && x.name.trim().toLowerCase()===name.toLowerCase());
   if(clash){ alert('Đã có sản phẩm trùng tên (mã '+clash.code+'). Vui lòng đặt tên khác.'); return; }
   if(id){
-    const p = DB.products.find(x=>x.id===id); p.name = name;
+    const p = DB.products.find(x=>x.id===id); p.name = name; p.image = productModalImage;
   } else {
-    DB.products.push({ id: uid(), code: genCode('SP','product'), name, importPrice:0, sellPrice:0, stock:0, history:[], priceHistory:[], createdAt: todayISO() });
+    DB.products.push({ id: uid(), code: genCode('SP','product'), name, importPrice:0, sellPrice:0, stock:0, history:[], priceHistory:[], image: productModalImage, createdAt: todayISO() });
   }
   saveDB(); closeModal(); renderInventoryResults(); renderNav();
 }
@@ -596,7 +641,7 @@ function doCopyProduct(sourceId){
   const clash = DB.products.find(x=>x.name.trim().toLowerCase()===name.toLowerCase());
   if(clash){ alert('Đã có sản phẩm trùng tên (mã '+clash.code+').'); return; }
   DB.products.push({ id: uid(), code: genCode('SP','product'), name, importPrice: src.importPrice, sellPrice: src.sellPrice,
-    stock:0, history:[], priceHistory: src.sellPrice? [{date:todayISO(), price:src.sellPrice}] : [], createdAt: todayISO() });
+    stock:0, history:[], priceHistory: src.sellPrice? [{date:todayISO(), price:src.sellPrice}] : [], image: src.image||'', createdAt: todayISO() });
   saveDB(); closeModal(); renderInventoryResults(); renderNav();
 }
 
@@ -753,6 +798,9 @@ function getPreorderReadiness(){
   return ready;
 }
 
+function orderItemsListHtml(o){
+  return o.items.map(i=>`<div style="display:flex;justify-content:space-between;gap:6px;padding:1px 0"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.name}</span><span style="font-weight:700;flex-shrink:0">x${i.qty}</span></div>`).join('');
+}
 function renderOrders(){
   document.getElementById('content').innerHTML = `
     <div class="search-bar">
@@ -802,7 +850,7 @@ function renderOrdersResults(){
         <td class="small">${o.trackingCode||'—'}</td>
         <td class="small">${CARRIERS[o.carrier]||'—'}</td>
         <td>${o.customerName}<br><span class="muted small">${o.phone}</span><br><span class="muted small">${o.address}</span></td>
-        <td class="small">${o.items.map(i=>i.name+' x'+i.qty).join('<br>')}</td>
+        <td class="small">${orderItemsListHtml(o)}</td>
         <td style="font-weight:700;font-size:13.5px;white-space:nowrap">${fmt(orderTotal(o))}</td>
         <td>${selectHtml(o.id,o.status,ORDER_STATUSES,'updateOrderStatus')}</td>
         <td>${selectHtml(o.id,o.paymentStatus,PAYMENT_STATUSES,'updatePaymentStatus')}</td>
@@ -957,8 +1005,11 @@ function showProductSuggestions(idx, query){
     return;
   }
   box.innerHTML = `<div style="position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(20,30,60,.12);z-index:30;max-height:200px;overflow-y:auto;overflow-x:hidden;margin-top:2px">
-    ${matches.map(p=>`<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #F0F1F5;font-size:12.5px" onmousedown="selectProductForItem(${idx}, '${p.id}')">
-      <b>${p.name}</b><div class="muted small">${p.code} — Tồn: ${p.stock} — ${fmt(p.sellPrice)}</div>
+    ${matches.map(p=>`<div style="padding:8px 10px;cursor:pointer;border-bottom:1px solid #F0F1F5;font-size:12.5px;display:flex;gap:8px;align-items:center" onmousedown="selectProductForItem(${idx}, '${p.id}')">
+      <div style="width:28px;height:28px;border-radius:6px;overflow:hidden;background:#F8F9FC;border:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center">
+        ${p.image? `<img src="${p.image}" style="width:100%;height:100%;object-fit:cover">` : `<span style="font-size:13px">📦</span>`}
+      </div>
+      <div><b>${p.name}</b><div class="muted small">${p.code} — Tồn: ${p.stock} — ${fmt(p.sellPrice)}</div></div>
     </div>`).join('')}
   </div>`;
 }
