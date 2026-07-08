@@ -77,9 +77,19 @@ input,select,textarea{font-family:inherit;font-size:13.5px;max-width:100%;}
 /* TABLE - no horizontal scroll, wraps instead */
 .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
 table{border-collapse:collapse;width:100%;table-layout:auto;font-size:12.5px;}
-th{text-align:left;padding:10px 10px;background:#F8F9FC;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.2px;border-bottom:1px solid var(--border);}
+th{text-align:left;padding:10px 10px;background:#F8F9FC;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.2px;border-bottom:1px solid var(--border);position:relative;}
 th[onclick]{cursor:pointer;user-select:none;}
 th[onclick]:hover{color:var(--teal);}
+th.has-filter{padding-right:22px;}
+.col-filter-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:15px;height:15px;border:none;background:rgba(0,0,0,.08);color:var(--muted);border-radius:3px;font-size:8px;line-height:15px;padding:0;cursor:pointer;text-transform:none;font-weight:700;}
+.col-filter-btn:hover{background:rgba(0,0,0,.18);color:var(--text);}
+.col-filter-btn.active{background:var(--teal);color:#fff;}
+.col-filter-panel{position:fixed;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);z-index:300;width:210px;padding:8px;text-align:left;cursor:default;}
+.col-filter-panel input[type=text]{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px;font-weight:400;text-transform:none;}
+.col-filter-panel .cf-list{max-height:180px;overflow:auto;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px 0;}
+.col-filter-panel label{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:400;text-transform:none;padding:3px 2px;cursor:pointer;color:var(--text);}
+.col-filter-panel label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.col-filter-panel .cf-foot{display:flex;justify-content:space-between;gap:6px;margin-top:6px;}
 td{padding:9px 10px;border-bottom:1px solid #F0F1F5;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;}
 tr:last-child td{border-bottom:none;}
 tr:hover td{background:#FAFBFD;}
@@ -359,6 +369,112 @@ function cmpVals(a,b){
   if(typeof a==='number' && typeof b==='number') return a-b;
   return String(a).localeCompare(String(b), 'vi', {numeric:true, sensitivity:'base'});
 }
+
+/* ---- Bộ lọc cột kiểu Excel (dùng chung cho mọi bảng) ---- */
+let colFilterState = {};   // colFilterState[ns][colKey] = Set<string> giá trị được chọn (không có key = hiện tất cả)
+let colFilterOpen = null;  // {ns, colKey, search, caret, renderFnName}
+let colFilterValuesCache = {};
+function cfKey(ns,colKey){ return ns+'::'+colKey; }
+function cfGetSet(ns, colKey){ return (colFilterState[ns] && colFilterState[ns][colKey]) || null; }
+function cfActive(ns, colKey){ return cfGetSet(ns,colKey)!==null; }
+function cfActiveCount(ns){ return colFilterState[ns]? Object.keys(colFilterState[ns]).length : 0; }
+function cfMatches(ns, colKey, rawValue){
+  const set = cfGetSet(ns, colKey);
+  if(!set) return true;
+  return set.has(String(rawValue));
+}
+function cfIsOpen(ns, colKey){ return !!(colFilterOpen && colFilterOpen.ns===ns && colFilterOpen.colKey===colKey); }
+function cfToggleOpen(ns, colKey, renderFnName, ev){
+  if(ev) ev.stopPropagation();
+  colFilterOpen = cfIsOpen(ns,colKey)? null : {ns, colKey, search:'', caret:null, renderFnName};
+  window[renderFnName]();
+}
+function cfClose(renderFnName){ colFilterOpen = null; window[renderFnName](); }
+function cfSetSearch(value, caret, renderFnName){
+  if(colFilterOpen){ colFilterOpen.search = value; colFilterOpen.caret = caret; }
+  window[renderFnName]();
+}
+function cfToggleValue(ns, colKey, val, renderFnName){
+  const allVals = (colFilterValuesCache[cfKey(ns,colKey)]||[]).map(v=>v.value);
+  if(!colFilterState[ns]) colFilterState[ns] = {};
+  let set = colFilterState[ns][colKey];
+  if(!set) set = new Set(allVals);
+  if(set.has(val)) set.delete(val); else set.add(val);
+  if(set.size===allVals.length) delete colFilterState[ns][colKey];
+  else colFilterState[ns][colKey] = set;
+  window[renderFnName]();
+}
+function cfSelectAll(ns, colKey, renderFnName){
+  if(colFilterState[ns]) delete colFilterState[ns][colKey];
+  window[renderFnName]();
+}
+function cfClearAllForTable(ns, renderFnName){
+  colFilterState[ns] = {}; colFilterOpen = null;
+  window[renderFnName]();
+}
+function escAttr(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/* Vẽ 1 ô <th> có thể sort (tuỳ chọn) + nút lọc kiểu Excel.
+   fullList: danh sách item dùng để liệt kê giá trị duy nhất (đã áp các bộ lọc khác, CHƯA áp bộ lọc của chính cột này)
+   valueFn(item) -> giá trị gốc dùng để so khớp lọc; labelFn(item, rawValue) -> chuỗi hiển thị trong danh sách lọc */
+function cfHeader(ns, colKey, label, sortState, sortOnclick, fullList, valueFn, labelFn, renderFnName){
+  const seen = new Map();
+  fullList.forEach(item=>{
+    const raw = valueFn(item);
+    const k = String(raw);
+    if(!seen.has(k)) seen.set(k, labelFn? labelFn(item, raw) : raw);
+  });
+  const values = Array.from(seen.entries()).map(([value,label])=>({value,label})).sort((a,b)=>cmpVals(a.value,b.value));
+  colFilterValuesCache[cfKey(ns,colKey)] = values;
+  const active = cfActive(ns, colKey);
+  const open = cfIsOpen(ns, colKey);
+  const selectedSet = cfGetSet(ns, colKey);
+  const search = (open && colFilterOpen.search) || '';
+  const shown = search? values.filter(v=>String(v.label).toLowerCase().includes(search.toLowerCase())) : values;
+  return `<th class="has-filter" ${sortOnclick?`onclick="${sortOnclick}"`:''}>
+    ${label}${sortState?sortArrow(sortState,colKey):''}
+    <button type="button" ${open?'id="colFilterBtnOpen"':''} class="col-filter-btn ${active?'active':''}" title="Lọc" onclick="cfToggleOpen('${ns}','${colKey}','${renderFnName}', event)">▾</button>
+    ${open? `
+    <div class="col-filter-panel" onclick="event.stopPropagation()">
+      <input type="text" id="colFilterSearchInput" placeholder="Tìm giá trị..." value="${escHtml(search)}" oninput="cfSetSearch(this.value, this.selectionStart, '${renderFnName}')">
+      <div class="cf-list">
+        ${shown.length? shown.map(v=>`
+          <label><input type="checkbox" ${(!selectedSet || selectedSet.has(v.value))?'checked':''} onchange="cfToggleValue('${ns}','${colKey}','${escAttr(v.value)}','${renderFnName}')"><span>${escHtml(v.label===''?'(Trống)':v.label)}</span></label>`).join('') : `<div class="muted small" style="padding:6px 2px">Không có kết quả</div>`}
+      </div>
+      <div class="cf-foot">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="cfSelectAll('${ns}','${colKey}','${renderFnName}')">Chọn tất cả</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="cfClose('${renderFnName}')">Đóng</button>
+      </div>
+    </div>` : ''}
+  </th>`;
+}
+function afterColFilterRender(){
+  if(!colFilterOpen) return;
+  const btn = document.getElementById('colFilterBtnOpen');
+  const panel = document.querySelector('.col-filter-panel');
+  if(btn && panel){
+    const r = btn.getBoundingClientRect();
+    const pw = 210;
+    let left = r.left - pw + 20;
+    if(left < 8) left = 8;
+    if(left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    panel.style.top = (r.bottom + 4) + 'px';
+    panel.style.left = left + 'px';
+  }
+  const inp = document.getElementById('colFilterSearchInput');
+  if(inp){
+    inp.focus();
+    const pos = (colFilterOpen.caret!=null) ? colFilterOpen.caret : inp.value.length;
+    try{ inp.setSelectionRange(pos,pos); }catch(e){}
+  }
+}
+document.addEventListener('click', function(e){
+  if(!colFilterOpen) return;
+  if(e.target.closest && (e.target.closest('.col-filter-panel') || e.target.closest('.col-filter-btn'))) return;
+  const fn = colFilterOpen.renderFnName;
+  colFilterOpen = null;
+  if(fn && window[fn]){ try{ window[fn](); }catch(err){} }
+});
 function todayISO(){ return new Date().toISOString(); }
 
 /* ======================= CONSTANTS ======================= */
@@ -417,6 +533,7 @@ function renderNav(){
 }
 function navigate(tab){
   activeTab = tab;
+  colFilterOpen = null;
   renderNav();
   if(!gConnected){ renderConnectGate(); return; }
   const titles = {dashboard:'Tổng quan', inventory:'Kho hàng', pricing:'Giá bán', orders:'Đơn hàng', complaints:'Khiếu nại & Đền hàng', reports:'Báo cáo'};
@@ -528,21 +645,29 @@ function invSortVal(p, key){
   return p[key];
 }
 function renderInventoryResults(){
-  const list = DB.products.filter(p=> (p.name+p.code).toLowerCase().includes(inv.search.toLowerCase()) );
+  const searchList = DB.products.filter(p=> (p.name+p.code).toLowerCase().includes(inv.search.toLowerCase()) );
+  const list = searchList.filter(p=>
+       cfMatches('inv','code',p.code)
+    && cfMatches('inv','name',p.name)
+    && cfMatches('inv','importPrice',p.importPrice)
+    && cfMatches('inv','stock',p.stock)
+    && cfMatches('inv','value',p.stock*p.importPrice)
+  );
   list.sort((a,b)=> cmpVals(invSortVal(a,invSort.key), invSortVal(b,invSort.key)) * invSort.dir);
-  document.getElementById('invCount').textContent = list.length+' sản phẩm';
+  document.getElementById('invCount').textContent = list.length+' sản phẩm'+(cfActiveCount('inv')? ' (đã lọc)':'');
   const totalInvValue = DB.products.reduce((s,p)=>s+p.stock*p.importPrice,0);
   document.getElementById('invResults').innerHTML = `
     <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <span class="muted small">Tổng giá trị tồn kho toàn bộ</span><b style="font-size:17px;color:var(--teal)">${fmt(totalInvValue)}</b>
+      ${cfActiveCount('inv')? `<button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('inv','renderInventoryResults')">✕ Xóa tất cả bộ lọc cột</button>`:''}
     </div>
     <div class="table-wrap"><table><thead><tr>
       <th></th>
-      <th onclick="toggleSort(invSort,'code'); renderInventoryResults()">Mã SP${sortArrow(invSort,'code')}</th>
-      <th onclick="toggleSort(invSort,'name'); renderInventoryResults()">Tên sản phẩm${sortArrow(invSort,'name')}</th>
-      <th onclick="toggleSort(invSort,'importPrice'); renderInventoryResults()">Giá nhập (TB)${sortArrow(invSort,'importPrice')}</th>
-      <th onclick="toggleSort(invSort,'stock'); renderInventoryResults()">Tồn kho${sortArrow(invSort,'stock')}</th>
-      <th onclick="toggleSort(invSort,'value'); renderInventoryResults()">Tổng giá trị tồn kho${sortArrow(invSort,'value')}</th>
+      ${cfHeader('inv','code','Mã SP',invSort,"toggleSort(invSort,'code'); renderInventoryResults()",searchList,p=>p.code,null,'renderInventoryResults')}
+      ${cfHeader('inv','name','Tên sản phẩm',invSort,"toggleSort(invSort,'name'); renderInventoryResults()",searchList,p=>p.name,null,'renderInventoryResults')}
+      ${cfHeader('inv','importPrice','Giá nhập (TB)',invSort,"toggleSort(invSort,'importPrice'); renderInventoryResults()",searchList,p=>p.importPrice,(p,raw)=>fmt(raw),'renderInventoryResults')}
+      ${cfHeader('inv','stock','Tồn kho',invSort,"toggleSort(invSort,'stock'); renderInventoryResults()",searchList,p=>p.stock,null,'renderInventoryResults')}
+      ${cfHeader('inv','value','Tổng giá trị tồn kho',invSort,"toggleSort(invSort,'value'); renderInventoryResults()",searchList,p=>p.stock*p.importPrice,(p,raw)=>fmt(raw),'renderInventoryResults')}
       <th>Lịch sử nhập</th><th>Thao tác</th>
     </tr></thead><tbody>
     ${list.length? list.map(p=>`
@@ -564,10 +689,11 @@ function renderInventoryResults(){
           <button class="btn btn-secondary btn-sm" onclick="openProductModal('${p.id}')">Sửa</button>
           <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Xóa</button>
         </td>
-      </tr>`).join('') : `<tr><td colspan="8" class="empty">Chưa có sản phẩm nào — bấm "+ Thêm sản phẩm" để bắt đầu</td></tr>`}
+      </tr>`).join('') : `<tr><td colspan="8" class="empty">${searchList.length? 'Không có sản phẩm nào khớp bộ lọc' : 'Chưa có sản phẩm nào — bấm "+ Thêm sản phẩm" để bắt đầu'}</td></tr>`}
     </tbody></table></div>
   `;
   renderPreorderNeeds();
+  afterColFilterRender();
 }
 function computePreorderNeeds(){
   const map = {};
@@ -936,29 +1062,40 @@ function ordSortVal(o, key){
 function renderOrdersResults(){
   const readiness = getPreorderReadiness();
   const q = ordUi.search.toLowerCase();
-  const list = [...DB.orders].filter(o=>
+  const baseList = [...DB.orders].filter(o=>
       (o.customerName+' '+o.phone+' '+o.code).toLowerCase().includes(q)
       && (!ordUi.statusFilter || o.status===ordUi.statusFilter)
       && (!ordUi.paymentFilter || o.paymentStatus===ordUi.paymentFilter)
       && (!ordUi.carrierFilter || o.carrier===ordUi.carrierFilter)
     );
+  const list = baseList.filter(o=>
+       cfMatches('ord','code',o.code)
+    && cfMatches('ord','trackingCode',o.trackingCode||'')
+    && cfMatches('ord','carrier',o.carrier)
+    && cfMatches('ord','customerName',o.customerName)
+    && cfMatches('ord','total',orderTotal(o))
+    && cfMatches('ord','status',o.status)
+    && cfMatches('ord','paymentStatus',o.paymentStatus)
+    && cfMatches('ord','updatedAt',fmtDate(o.updatedAt||o.createdAt))
+  );
   list.sort((a,b)=> cmpVals(ordSortVal(a,ordSort.key), ordSortVal(b,ordSort.key)) * ordSort.dir);
-  document.getElementById('ordCount').textContent = list.length+' đơn';
+  document.getElementById('ordCount').textContent = list.length+' đơn'+(cfActiveCount('ord')? ' (đã lọc cột)':'');
   document.getElementById('ordResults').innerHTML = `
+    ${cfActiveCount('ord')? `<div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('ord','renderOrdersResults')">✕ Xóa tất cả bộ lọc cột</button></div>`:''}
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
       <col style="width:9%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
       <col style="width:9%"><col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:10%">
     </colgroup><thead><tr>
-      <th onclick="toggleSort(ordSort,'code'); renderOrdersResults()">Mã đơn${sortArrow(ordSort,'code')}</th>
-      <th onclick="toggleSort(ordSort,'trackingCode'); renderOrdersResults()">Mã vận đơn${sortArrow(ordSort,'trackingCode')}</th>
-      <th onclick="toggleSort(ordSort,'carrier'); renderOrdersResults()">Vận chuyển${sortArrow(ordSort,'carrier')}</th>
-      <th onclick="toggleSort(ordSort,'customerName'); renderOrdersResults()">Khách hàng${sortArrow(ordSort,'customerName')}</th>
+      ${cfHeader('ord','code','Mã đơn',ordSort,"toggleSort(ordSort,'code'); renderOrdersResults()",baseList,o=>o.code,null,'renderOrdersResults')}
+      ${cfHeader('ord','trackingCode','Mã vận đơn',ordSort,"toggleSort(ordSort,'trackingCode'); renderOrdersResults()",baseList,o=>o.trackingCode||'',null,'renderOrdersResults')}
+      ${cfHeader('ord','carrier','Vận chuyển',ordSort,"toggleSort(ordSort,'carrier'); renderOrdersResults()",baseList,o=>o.carrier,(o,raw)=>CARRIERS[raw]||raw,'renderOrdersResults')}
+      ${cfHeader('ord','customerName','Khách hàng',ordSort,"toggleSort(ordSort,'customerName'); renderOrdersResults()",baseList,o=>o.customerName,null,'renderOrdersResults')}
       <th>Sản phẩm</th>
-      <th onclick="toggleSort(ordSort,'total'); renderOrdersResults()">Giá trị${sortArrow(ordSort,'total')}</th>
-      <th onclick="toggleSort(ordSort,'status'); renderOrdersResults()">Trạng thái đơn${sortArrow(ordSort,'status')}</th>
-      <th onclick="toggleSort(ordSort,'paymentStatus'); renderOrdersResults()">Thanh toán${sortArrow(ordSort,'paymentStatus')}</th>
+      ${cfHeader('ord','total','Giá trị',ordSort,"toggleSort(ordSort,'total'); renderOrdersResults()",baseList,o=>orderTotal(o),(o,raw)=>fmt(raw),'renderOrdersResults')}
+      ${cfHeader('ord','status','Trạng thái đơn',ordSort,"toggleSort(ordSort,'status'); renderOrdersResults()",baseList,o=>o.status,(o,raw)=>statusMeta(raw,ORDER_STATUSES).label,'renderOrdersResults')}
+      ${cfHeader('ord','paymentStatus','Thanh toán',ordSort,"toggleSort(ordSort,'paymentStatus'); renderOrdersResults()",baseList,o=>o.paymentStatus,(o,raw)=>statusMeta(raw,PAYMENT_STATUSES).label,'renderOrdersResults')}
       <th>Thao tác</th>
-      <th onclick="toggleSort(ordSort,'updatedAt'); renderOrdersResults()">Cập nhật lần cuối${sortArrow(ordSort,'updatedAt')}</th>
+      ${cfHeader('ord','updatedAt','Cập nhật lần cuối',ordSort,"toggleSort(ordSort,'updatedAt'); renderOrdersResults()",baseList,o=>fmtDate(o.updatedAt||o.createdAt),null,'renderOrdersResults')}
     </tr></thead><tbody>
     ${list.length? list.map(o=>`
       <tr>
@@ -981,9 +1118,10 @@ function renderOrdersResults(){
           </div>
         </td>
         <td class="small">${fmtDate(o.updatedAt||o.createdAt)}</td>
-      </tr>`).join('') : `<tr><td colspan="10" class="empty">Chưa có đơn hàng nào</td></tr>`}
+      </tr>`).join('') : `<tr><td colspan="10" class="empty">${baseList.length? 'Không có đơn nào khớp bộ lọc' : 'Chưa có đơn hàng nào'}</td></tr>`}
     </tbody></table></div>
   `;
+  afterColFilterRender();
 }
 function updateOrderStatus(orderId, newStatus){
   const o = DB.orders.find(x=>x.id===orderId);
@@ -1301,9 +1439,18 @@ function compSortVal(c, key){
   return c[key];
 }
 function renderComplaints(){
-  const list = [...DB.complaints]
+  const baseList = [...DB.complaints]
     .filter(c=> (!compUi.typeFilter || c.compensationType===compUi.typeFilter)
              && (!compUi.statusFilter || complaintStatusKey(c)===compUi.statusFilter));
+  const list = baseList.filter(c=>
+       cfMatches('comp','code',c.code)
+    && cfMatches('comp','customerName',c.customerName)
+    && cfMatches('comp','refundValue',Number(c.refundValue||0))
+    && cfMatches('comp','createdAt',fmtDate(c.createdAt))
+    && cfMatches('comp','updatedAt',fmtDate(c.updatedAt||c.createdAt))
+    && cfMatches('comp','statusRefund',c.statusRefund||'')
+    && cfMatches('comp','statusShip',c.statusShip||'')
+  );
   list.sort((a,b)=> cmpVals(compSortVal(a,compSort.key), compSortVal(b,compSort.key)) * compSort.dir);
   document.getElementById('content').innerHTML = `
     <div class="search-bar">
@@ -1316,19 +1463,20 @@ function renderComplaints(){
         ${MERGED_COMP_STATUSES.map(s=>`<option value="${s.key}" ${compUi.statusFilter===s.key?'selected':''}>${s.label}</option>`).join('')}
       </select>
       ${(compUi.typeFilter||compUi.statusFilter)? `<button class="btn btn-secondary btn-sm" onclick="compUi.typeFilter='';compUi.statusFilter=''; renderComplaints()">✕ Xóa lọc</button>`:''}
-      <span class="muted small">${list.length} khiếu nại/đền hàng</span>
+      ${cfActiveCount('comp')? `<button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('comp','renderComplaints')">✕ Xóa bộ lọc cột</button>`:''}
+      <span class="muted small">${list.length} khiếu nại/đền hàng${cfActiveCount('comp')? ' (đã lọc cột)':''}</span>
     </div>
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
       <col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:7%">
     </colgroup><thead><tr>
-      <th onclick="toggleSort(compSort,'code'); renderComplaints()">Mã hàng bù${sortArrow(compSort,'code')}</th>
-      <th onclick="toggleSort(compSort,'customerName'); renderComplaints()">Khách hàng${sortArrow(compSort,'customerName')}</th>
+      ${cfHeader('comp','code','Mã hàng bù',compSort,"toggleSort(compSort,'code'); renderComplaints()",baseList,c=>c.code,null,'renderComplaints')}
+      ${cfHeader('comp','customerName','Khách hàng',compSort,"toggleSort(compSort,'customerName'); renderComplaints()",baseList,c=>c.customerName,null,'renderComplaints')}
       <th>Mô tả</th>
-      <th onclick="toggleSort(compSort,'refundValue'); renderComplaints()">Tổng giá trị bù${sortArrow(compSort,'refundValue')}</th>
-      <th onclick="toggleSort(compSort,'createdAt'); renderComplaints()">Ngày tạo${sortArrow(compSort,'createdAt')}</th>
-      <th onclick="toggleSort(compSort,'updatedAt'); renderComplaints()">Cập nhật lần cuối${sortArrow(compSort,'updatedAt')}</th>
-      <th onclick="toggleSort(compSort,'statusRefund'); renderComplaints()">Hoàn tiền${sortArrow(compSort,'statusRefund')}</th>
-      <th onclick="toggleSort(compSort,'statusShip'); renderComplaints()">Gửi hàng bù${sortArrow(compSort,'statusShip')}</th>
+      ${cfHeader('comp','refundValue','Tổng giá trị bù',compSort,"toggleSort(compSort,'refundValue'); renderComplaints()",baseList,c=>Number(c.refundValue||0),(c,raw)=>fmt(raw),'renderComplaints')}
+      ${cfHeader('comp','createdAt','Ngày tạo',compSort,"toggleSort(compSort,'createdAt'); renderComplaints()",baseList,c=>fmtDate(c.createdAt),null,'renderComplaints')}
+      ${cfHeader('comp','updatedAt','Cập nhật lần cuối',compSort,"toggleSort(compSort,'updatedAt'); renderComplaints()",baseList,c=>fmtDate(c.updatedAt||c.createdAt),null,'renderComplaints')}
+      ${cfHeader('comp','statusRefund','Hoàn tiền',compSort,"toggleSort(compSort,'statusRefund'); renderComplaints()",baseList,c=>c.statusRefund||'',(c,raw)=>raw? statusMeta(raw,REFUND_STATUSES).label : '—','renderComplaints')}
+      ${cfHeader('comp','statusShip','Gửi hàng bù',compSort,"toggleSort(compSort,'statusShip'); renderComplaints()",baseList,c=>c.statusShip||'',(c,raw)=>raw? statusMeta(raw,SHIP_COMP_STATUSES).label : '—','renderComplaints')}
       <th></th>
     </tr></thead><tbody>
     ${list.length? list.map(c=>`
@@ -1342,9 +1490,10 @@ function renderComplaints(){
         <td>${c.compensationType==='hoan_tien'? selectHtml(c.id, c.statusRefund, REFUND_STATUSES, 'updateComplaintRefundStatus') : '<span class="muted small">—</span>'}</td>
         <td>${c.compensationType==='gui_hang_bu'? selectHtml(c.id, c.statusShip, SHIP_COMP_STATUSES, 'updateComplaintShipStatus') : '<span class="muted small">—</span>'}</td>
         <td><button class="btn btn-ghost btn-sm" onclick="openComplaintModal('${c.id}')">Chi tiết</button></td>
-      </tr>`).join('') : `<tr><td colspan="9" class="empty">Chưa có khiếu nại/đền hàng nào</td></tr>`}
+      </tr>`).join('') : `<tr><td colspan="9" class="empty">${baseList.length? 'Không có dòng nào khớp bộ lọc' : 'Chưa có khiếu nại/đền hàng nào'}</td></tr>`}
     </tbody></table></div>
   `;
+  afterColFilterRender();
 }
 function updateComplaintRefundStatus(id, val){
   const c = DB.complaints.find(x=>x.id===id); if(!c) return;
