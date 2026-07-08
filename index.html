@@ -78,6 +78,8 @@ input,select,textarea{font-family:inherit;font-size:13.5px;max-width:100%;}
 .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}
 table{border-collapse:collapse;width:100%;table-layout:auto;font-size:12.5px;}
 th{text-align:left;padding:10px 10px;background:#F8F9FC;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.2px;border-bottom:1px solid var(--border);}
+th[onclick]{cursor:pointer;user-select:none;}
+th[onclick]:hover{color:var(--teal);}
 td{padding:9px 10px;border-bottom:1px solid #F0F1F5;vertical-align:top;word-break:break-word;overflow-wrap:anywhere;}
 tr:last-child td{border-bottom:none;}
 tr:hover td{background:#FAFBFD;}
@@ -345,6 +347,18 @@ function genCode(prefix, key, pad=4){
 }
 function fmt(n){ return (Math.round(n||0)).toLocaleString('vi-VN')+'đ'; }
 function fmtDate(d){ if(!d) return '—'; const x=new Date(d); return x.toLocaleDateString('vi-VN')+' '+x.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}); }
+/* ---- Sắp xếp bảng dùng chung ---- */
+function toggleSort(state, key){
+  if(state.key===key) state.dir = -state.dir; else { state.key = key; state.dir = 1; }
+}
+function sortArrow(state, key){ return state.key===key ? (state.dir===1?' ▲':' ▼') : ''; }
+function cmpVals(a,b){
+  if(a==null && b==null) return 0;
+  if(a==null) return -1;
+  if(b==null) return 1;
+  if(typeof a==='number' && typeof b==='number') return a-b;
+  return String(a).localeCompare(String(b), 'vi', {numeric:true, sensitivity:'base'});
+}
 function todayISO(){ return new Date().toISOString(); }
 
 /* ======================= CONSTANTS ======================= */
@@ -508,8 +522,14 @@ function renderInventory(){
   `;
   renderInventoryResults();
 }
+let invSort = {key:'code', dir:1};
+function invSortVal(p, key){
+  if(key==='value') return p.stock*p.importPrice;
+  return p[key];
+}
 function renderInventoryResults(){
   const list = DB.products.filter(p=> (p.name+p.code).toLowerCase().includes(inv.search.toLowerCase()) );
+  list.sort((a,b)=> cmpVals(invSortVal(a,invSort.key), invSortVal(b,invSort.key)) * invSort.dir);
   document.getElementById('invCount').textContent = list.length+' sản phẩm';
   const totalInvValue = DB.products.reduce((s,p)=>s+p.stock*p.importPrice,0);
   document.getElementById('invResults').innerHTML = `
@@ -517,7 +537,13 @@ function renderInventoryResults(){
       <span class="muted small">Tổng giá trị tồn kho toàn bộ</span><b style="font-size:17px;color:var(--teal)">${fmt(totalInvValue)}</b>
     </div>
     <div class="table-wrap"><table><thead><tr>
-      <th></th><th>Mã SP</th><th>Tên sản phẩm</th><th>Giá nhập (TB)</th><th>Tồn kho</th><th>Tổng giá trị tồn kho</th><th>Lịch sử nhập</th><th>Thao tác</th>
+      <th></th>
+      <th onclick="toggleSort(invSort,'code'); renderInventoryResults()">Mã SP${sortArrow(invSort,'code')}</th>
+      <th onclick="toggleSort(invSort,'name'); renderInventoryResults()">Tên sản phẩm${sortArrow(invSort,'name')}</th>
+      <th onclick="toggleSort(invSort,'importPrice'); renderInventoryResults()">Giá nhập (TB)${sortArrow(invSort,'importPrice')}</th>
+      <th onclick="toggleSort(invSort,'stock'); renderInventoryResults()">Tồn kho${sortArrow(invSort,'stock')}</th>
+      <th onclick="toggleSort(invSort,'value'); renderInventoryResults()">Tổng giá trị tồn kho${sortArrow(invSort,'value')}</th>
+      <th>Lịch sử nhập</th><th>Thao tác</th>
     </tr></thead><tbody>
     ${list.length? list.map(p=>`
       <tr>
@@ -726,10 +752,25 @@ function previousPrice(p){
   if(hist.length>=2) return hist[hist.length-2].price;
   return null;
 }
+let priceSort = {key:'code', dir:1};
+function priceSortVal(p, key){
+  if(key==='prev') return previousPrice(p);
+  if(key==='sellPrice') return p.sellPrice;
+  return p[key];
+}
 function renderPricing(){
+  const list = [...DB.products];
+  list.sort((a,b)=> cmpVals(priceSortVal(a,priceSort.key), priceSortVal(b,priceSort.key)) * priceSort.dir);
   document.getElementById('content').innerHTML = `
-    <div class="table-wrap"><table><thead><tr><th></th><th>Mã SP</th><th>Tên sản phẩm</th><th>Giá bán gần nhất</th><th>Giá bán hiện tại</th><th>Giá bán mới</th><th>Lịch sử giá</th></tr></thead><tbody>
-    ${DB.products.length? DB.products.map(p=>{
+    <div class="table-wrap"><table><thead><tr>
+      <th></th>
+      <th onclick="toggleSort(priceSort,'code'); renderPricing()">Mã SP${sortArrow(priceSort,'code')}</th>
+      <th onclick="toggleSort(priceSort,'name'); renderPricing()">Tên sản phẩm${sortArrow(priceSort,'name')}</th>
+      <th onclick="toggleSort(priceSort,'prev'); renderPricing()">Giá bán gần nhất${sortArrow(priceSort,'prev')}</th>
+      <th onclick="toggleSort(priceSort,'sellPrice'); renderPricing()">Giá bán hiện tại${sortArrow(priceSort,'sellPrice')}</th>
+      <th>Giá bán mới</th><th>Lịch sử giá</th>
+    </tr></thead><tbody>
+    ${list.length? list.map(p=>{
       const prev = previousPrice(p);
       return `
       <tr>
@@ -838,6 +879,15 @@ function renderOrders(){
   `;
   renderOrdersResults();
 }
+let ordSort = {key:'updatedAt', dir:-1};
+function ordSortVal(o, key){
+  if(key==='updatedAt') return new Date(o.updatedAt||o.createdAt).getTime();
+  if(key==='total') return orderTotal(o);
+  if(key==='status') return statusMeta(o.status,ORDER_STATUSES).label;
+  if(key==='paymentStatus') return statusMeta(o.paymentStatus,PAYMENT_STATUSES).label;
+  if(key==='carrier') return CARRIERS[o.carrier]||'';
+  return o[key];
+}
 function renderOrdersResults(){
   const readiness = getPreorderReadiness();
   const q = ordUi.search.toLowerCase();
@@ -846,15 +896,24 @@ function renderOrdersResults(){
       && (!ordUi.statusFilter || o.status===ordUi.statusFilter)
       && (!ordUi.paymentFilter || o.paymentStatus===ordUi.paymentFilter)
       && (!ordUi.carrierFilter || o.carrier===ordUi.carrierFilter)
-    )
-    .sort((a,b)=>new Date(b.updatedAt||b.createdAt)-new Date(a.updatedAt||a.createdAt));
+    );
+  list.sort((a,b)=> cmpVals(ordSortVal(a,ordSort.key), ordSortVal(b,ordSort.key)) * ordSort.dir);
   document.getElementById('ordCount').textContent = list.length+' đơn';
   document.getElementById('ordResults').innerHTML = `
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
       <col style="width:9%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
       <col style="width:9%"><col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:10%">
     </colgroup><thead><tr>
-      <th>Mã đơn</th><th>Mã vận đơn</th><th>Vận chuyển</th><th>Khách hàng</th><th>Sản phẩm</th><th>Giá trị</th><th>Trạng thái đơn</th><th>Thanh toán</th><th>Thao tác</th><th>Cập nhật lần cuối</th>
+      <th onclick="toggleSort(ordSort,'code'); renderOrdersResults()">Mã đơn${sortArrow(ordSort,'code')}</th>
+      <th onclick="toggleSort(ordSort,'trackingCode'); renderOrdersResults()">Mã vận đơn${sortArrow(ordSort,'trackingCode')}</th>
+      <th onclick="toggleSort(ordSort,'carrier'); renderOrdersResults()">Vận chuyển${sortArrow(ordSort,'carrier')}</th>
+      <th onclick="toggleSort(ordSort,'customerName'); renderOrdersResults()">Khách hàng${sortArrow(ordSort,'customerName')}</th>
+      <th>Sản phẩm</th>
+      <th onclick="toggleSort(ordSort,'total'); renderOrdersResults()">Giá trị${sortArrow(ordSort,'total')}</th>
+      <th onclick="toggleSort(ordSort,'status'); renderOrdersResults()">Trạng thái đơn${sortArrow(ordSort,'status')}</th>
+      <th onclick="toggleSort(ordSort,'paymentStatus'); renderOrdersResults()">Thanh toán${sortArrow(ordSort,'paymentStatus')}</th>
+      <th>Thao tác</th>
+      <th onclick="toggleSort(ordSort,'updatedAt'); renderOrdersResults()">Cập nhật lần cuối${sortArrow(ordSort,'updatedAt')}</th>
     </tr></thead><tbody>
     ${list.length? list.map(o=>`
       <tr>
@@ -1177,11 +1236,20 @@ const MERGED_COMP_STATUSES = (()=>{
   return out;
 })();
 function complaintStatusKey(c){ return c.compensationType==='hoan_tien' ? c.statusRefund : c.statusShip; }
+let compSort = {key:'updatedAt', dir:-1};
+function compSortVal(c, key){
+  if(key==='updatedAt') return new Date(c.updatedAt||c.createdAt).getTime();
+  if(key==='createdAt') return new Date(c.createdAt).getTime();
+  if(key==='refundValue') return Number(c.refundValue||0);
+  if(key==='statusRefund') return statusMeta(c.statusRefund,REFUND_STATUSES).label;
+  if(key==='statusShip') return statusMeta(c.statusShip,SHIP_COMP_STATUSES).label;
+  return c[key];
+}
 function renderComplaints(){
   const list = [...DB.complaints]
     .filter(c=> (!compUi.typeFilter || c.compensationType===compUi.typeFilter)
-             && (!compUi.statusFilter || complaintStatusKey(c)===compUi.statusFilter))
-    .sort((a,b)=>new Date(b.updatedAt||b.createdAt||b.date)-new Date(a.updatedAt||a.createdAt||a.date));
+             && (!compUi.statusFilter || complaintStatusKey(c)===compUi.statusFilter));
+  list.sort((a,b)=> cmpVals(compSortVal(a,compSort.key), compSortVal(b,compSort.key)) * compSort.dir);
   document.getElementById('content').innerHTML = `
     <div class="search-bar">
       <select class="inline-select" style="max-width:170px" onchange="compUi.typeFilter=this.value; renderComplaints()">
@@ -1198,7 +1266,15 @@ function renderComplaints(){
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
       <col style="width:10%"><col style="width:15%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:12%"><col style="width:12%"><col style="width:7%">
     </colgroup><thead><tr>
-      <th>Mã hàng bù</th><th>Khách hàng</th><th>Mô tả</th><th>Tổng giá trị bù</th><th>Ngày tạo</th><th>Cập nhật lần cuối</th><th>Hoàn tiền</th><th>Gửi hàng bù</th><th></th>
+      <th onclick="toggleSort(compSort,'code'); renderComplaints()">Mã hàng bù${sortArrow(compSort,'code')}</th>
+      <th onclick="toggleSort(compSort,'customerName'); renderComplaints()">Khách hàng${sortArrow(compSort,'customerName')}</th>
+      <th>Mô tả</th>
+      <th onclick="toggleSort(compSort,'refundValue'); renderComplaints()">Tổng giá trị bù${sortArrow(compSort,'refundValue')}</th>
+      <th onclick="toggleSort(compSort,'createdAt'); renderComplaints()">Ngày tạo${sortArrow(compSort,'createdAt')}</th>
+      <th onclick="toggleSort(compSort,'updatedAt'); renderComplaints()">Cập nhật lần cuối${sortArrow(compSort,'updatedAt')}</th>
+      <th onclick="toggleSort(compSort,'statusRefund'); renderComplaints()">Hoàn tiền${sortArrow(compSort,'statusRefund')}</th>
+      <th onclick="toggleSort(compSort,'statusShip'); renderComplaints()">Gửi hàng bù${sortArrow(compSort,'statusShip')}</th>
+      <th></th>
     </tr></thead><tbody>
     ${list.length? list.map(c=>`
       <tr>
@@ -1451,6 +1527,7 @@ function saveComplaint(){
 
 /* ======================= REPORTS ======================= */
 let repRange = null;
+let repBreakdownSort = {key:'revenue', dir:-1};
 function productCost(o){ return o.items.reduce((ss,it)=>{ const p=DB.products.find(x=>x.id===it.productId); return ss+(p?p.importPrice:0)*it.qty; },0); }
 function computeProductBreakdown(from,to){
   const completed = DB.orders.filter(o=>o.status==='hoan_tat' && new Date(o.createdAt)>=from && new Date(o.createdAt)<=to);
@@ -1497,6 +1574,7 @@ function renderReports(){
   const revenue = grossRevenue - compensationDeduction;
   const profit = revenue-cost;
   const breakdown = computeProductBreakdown(from,to);
+  breakdown.sort((a,b)=> cmpVals(a[repBreakdownSort.key], b[repBreakdownSort.key]) * repBreakdownSort.dir);
 
   const days = []; let cur = new Date(from);
   while(cur<=to && days.length<31){ days.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
@@ -1532,7 +1610,14 @@ function renderReports(){
 
     <div class="section-title">Chi tiết theo từng sản phẩm <span class="hint">SL bán, doanh số, đóng góp % và xu hướng so với kỳ trước</span></div>
     <div class="table-wrap"><table><thead><tr>
-      <th>Mã SP</th><th>Tên sản phẩm</th><th>SL bán</th><th>Doanh số</th><th>Giá vốn</th><th>Lợi nhuận</th><th>% Đóng góp DT</th><th>Xu hướng</th>
+      <th onclick="toggleSort(repBreakdownSort,'code'); renderReports()">Mã SP${sortArrow(repBreakdownSort,'code')}</th>
+      <th onclick="toggleSort(repBreakdownSort,'name'); renderReports()">Tên sản phẩm${sortArrow(repBreakdownSort,'name')}</th>
+      <th onclick="toggleSort(repBreakdownSort,'qty'); renderReports()">SL bán${sortArrow(repBreakdownSort,'qty')}</th>
+      <th onclick="toggleSort(repBreakdownSort,'revenue'); renderReports()">Doanh số${sortArrow(repBreakdownSort,'revenue')}</th>
+      <th onclick="toggleSort(repBreakdownSort,'cost'); renderReports()">Giá vốn${sortArrow(repBreakdownSort,'cost')}</th>
+      <th onclick="toggleSort(repBreakdownSort,'profit'); renderReports()">Lợi nhuận${sortArrow(repBreakdownSort,'profit')}</th>
+      <th onclick="toggleSort(repBreakdownSort,'share'); renderReports()">% Đóng góp DT${sortArrow(repBreakdownSort,'share')}</th>
+      <th>Xu hướng</th>
     </tr></thead><tbody>
     ${breakdown.length? breakdown.map(r=>`
       <tr>
