@@ -80,10 +80,12 @@ table{border-collapse:collapse;width:100%;table-layout:auto;font-size:12.5px;}
 th{text-align:left;padding:10px 10px;background:#F8F9FC;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.2px;border-bottom:1px solid var(--border);position:relative;}
 th[onclick]{cursor:pointer;user-select:none;}
 th[onclick]:hover{color:var(--teal);}
-th.has-filter{padding-right:22px;}
-.col-filter-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:15px;height:15px;border:none;background:rgba(0,0,0,.08);color:var(--muted);border-radius:3px;font-size:8px;line-height:15px;padding:0;cursor:pointer;text-transform:none;font-weight:700;}
-.col-filter-btn:hover{background:rgba(0,0,0,.18);color:var(--text);}
-.col-filter-btn.active{background:var(--teal);color:#fff;}
+th.has-filter{padding-bottom:9px;}
+.th-label{display:block;margin-bottom:6px;}
+.col-filter-btn{display:inline-block;margin-right:5px;border:1px solid #D5DAE5;background:#fff;color:var(--muted);border-radius:5px;font-size:10.5px;line-height:1;padding:4px 10px;cursor:pointer;text-transform:none;font-weight:700;letter-spacing:.1px;}
+.col-filter-btn:last-child{margin-right:0;}
+.col-filter-btn:hover{background:#EEF0F5;color:var(--text);border-color:#C7CDDB;}
+.col-filter-btn.active{background:var(--teal);color:#fff;border-color:var(--teal);}
 .col-filter-panel{position:fixed;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.2);z-index:300;width:210px;padding:8px;text-align:left;cursor:default;}
 .col-filter-panel input[type=text]{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-size:12px;font-weight:400;text-transform:none;}
 .col-filter-panel .cf-list{max-height:180px;overflow:auto;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px 0;}
@@ -173,7 +175,7 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 let DB = { products: [], orders: [], complaints: [], seq:{product:0, order:0, complaint:0} };
 let activeTab = 'dashboard';
 let inv = { search:'' };
-let ordUi = { search:'', statusFilter:'', paymentFilter:'', carrierFilter:'' };
+let ordUi = { search:'', statusFilter:'', paymentFilter:'', paymentMethodFilter:'', carrierFilter:'' };
 let sheetConfig = { clientId:'', spreadsheetId:'' };
 let gTokenClient = null;
 let gAccessToken = null;
@@ -417,7 +419,7 @@ function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
 /* Vẽ 1 ô <th> có thể sort (tuỳ chọn) + nút lọc kiểu Excel.
    fullList: danh sách item dùng để liệt kê giá trị duy nhất (đã áp các bộ lọc khác, CHƯA áp bộ lọc của chính cột này)
    valueFn(item) -> giá trị gốc dùng để so khớp lọc; labelFn(item, rawValue) -> chuỗi hiển thị trong danh sách lọc */
-function cfHeader(ns, colKey, label, sortState, sortOnclick, fullList, valueFn, labelFn, renderFnName){
+function cfFilterButton(ns, colKey, fullList, valueFn, labelFn, renderFnName, btnLabel){
   const seen = new Map();
   fullList.forEach(item=>{
     const raw = valueFn(item);
@@ -431,9 +433,7 @@ function cfHeader(ns, colKey, label, sortState, sortOnclick, fullList, valueFn, 
   const selectedSet = cfGetSet(ns, colKey);
   const search = (open && colFilterOpen.search) || '';
   const shown = search? values.filter(v=>String(v.label).toLowerCase().includes(search.toLowerCase())) : values;
-  return `<th class="has-filter" ${sortOnclick?`onclick="${sortOnclick}"`:''}>
-    ${label}${sortState?sortArrow(sortState,colKey):''}
-    <button type="button" ${open?'id="colFilterBtnOpen"':''} class="col-filter-btn ${active?'active':''}" title="Lọc" onclick="cfToggleOpen('${ns}','${colKey}','${renderFnName}', event)">▾</button>
+  return `<button type="button" ${open?'id="colFilterBtnOpen"':''} class="col-filter-btn ${active?'active':''}" title="Lọc" onclick="cfToggleOpen('${ns}','${colKey}','${renderFnName}', event)">${btnLabel||'Lọc'}</button>
     ${open? `
     <div class="col-filter-panel" onclick="event.stopPropagation()">
       <input type="text" id="colFilterSearchInput" placeholder="Tìm giá trị..." value="${escHtml(search)}" oninput="cfSetSearch(this.value, this.selectionStart, '${renderFnName}')">
@@ -445,7 +445,12 @@ function cfHeader(ns, colKey, label, sortState, sortOnclick, fullList, valueFn, 
         <button type="button" class="btn btn-ghost btn-sm" onclick="cfSelectAll('${ns}','${colKey}','${renderFnName}')">Chọn tất cả</button>
         <button type="button" class="btn btn-ghost btn-sm" onclick="cfClose('${renderFnName}')">Đóng</button>
       </div>
-    </div>` : ''}
+    </div>` : ''}`;
+}
+function cfHeader(ns, colKey, label, sortState, sortOnclick, fullList, valueFn, labelFn, renderFnName){
+  return `<th class="has-filter" ${sortOnclick?`onclick="${sortOnclick}"`:''}>
+    <div class="th-label">${label}${sortState?sortArrow(sortState,colKey):''}</div>
+    ${cfFilterButton(ns, colKey, fullList, valueFn, labelFn, renderFnName)}
   </th>`;
 }
 function afterColFilterRender(){
@@ -492,6 +497,7 @@ const PAYMENT_STATUSES = [
   {key:'da_tt', label:'Đã thanh toán', bg:'#E4F5EC', fg:'#177047'},
 ];
 const PAYMENT_METHODS = {chuyen_khoan:'Chuyển khoản', cod:'COD', tien_mat:'Tiền mặt'};
+const PAYMENT_METHODS_LIST = Object.entries(PAYMENT_METHODS).map(([key,label])=>({key,label}));
 const CARRIERS = {shopee_express:'Shopee Express', viettel_post:'Viettel Post', grab_lalamove:'Grab/Lalamove', tu_lay:'Khách tự lấy hàng'};
 const COMP_TYPES = {hoan_tien:'Hoàn tiền', gui_hang_bu:'Gửi hàng bù'};
 const REFUND_STATUSES = [
@@ -716,53 +722,38 @@ function stockDiffStatus(diff){
 const STOCK_DIFF_LABELS = {thieu:'Thiếu hàng', vua_du:'Vừa đủ', thap:'Tồn thấp', an_toan:'An toàn'};
 const STOCK_DIFF_ORDER = {thieu:0, vua_du:1, thap:2, an_toan:3};
 let preorderNeedsSort = {key:'code', dir:1};
-let preorderNeedsFilter = []; // rỗng = hiển thị tất cả
-let preorderFilterOpen = false;
 function preorderNeedsSortVal(r, key){
   if(key==='status') return STOCK_DIFF_ORDER[stockDiffStatus(r.diff).key];
   return r[key];
 }
-function togglePreorderFilter(){ preorderFilterOpen = !preorderFilterOpen; renderPreorderNeeds(); }
-function togglePreorderFilterKey(k){
-  const allKeys = Object.keys(STOCK_DIFF_LABELS);
-  let current = preorderNeedsFilter.length? preorderNeedsFilter.slice() : allKeys.slice();
-  const idx = current.indexOf(k);
-  if(idx>=0) current.splice(idx,1); else current.push(k);
-  preorderNeedsFilter = (current.length===allKeys.length)? [] : current;
-  renderPreorderNeeds();
-}
 function renderPreorderNeeds(){
   const allNeeds = computePreorderNeeds();
-  let needs = preorderNeedsFilter.length? allNeeds.filter(r=>preorderNeedsFilter.includes(stockDiffStatus(r.diff).key)) : allNeeds.slice();
+  let needs = allNeeds.filter(r=>
+       cfMatches('pre','code',r.code)
+    && cfMatches('pre','name',r.name)
+    && cfMatches('pre','stock',r.stock)
+    && cfMatches('pre','needed',r.needed)
+    && cfMatches('pre','diff',r.diff)
+    && cfMatches('pre','status',stockDiffStatus(r.diff).key)
+  );
   needs.sort((a,b)=> cmpVals(preorderNeedsSortVal(a,preorderNeedsSort.key), preorderNeedsSortVal(b,preorderNeedsSort.key)) * preorderNeedsSort.dir);
   document.getElementById('invPreorderNeeds').innerHTML = `
+    <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${cfActiveCount('pre')? `<button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('pre','renderPreorderNeeds')">✕ Xóa tất cả bộ lọc cột</button>`:''}
+      ${allNeeds.length? `<button class="btn btn-secondary" onclick="exportPreorderNeeds()">⬇ Xuất file cần đặt hàng (Excel)</button>` : ''}
+    </div>
     <div class="table-wrap"><table><thead><tr>
-      <th onclick="toggleSort(preorderNeedsSort,'code'); renderPreorderNeeds()">Mã SP${sortArrow(preorderNeedsSort,'code')}</th>
-      <th onclick="toggleSort(preorderNeedsSort,'name'); renderPreorderNeeds()">Tên sản phẩm${sortArrow(preorderNeedsSort,'name')}</th>
-      <th onclick="toggleSort(preorderNeedsSort,'stock'); renderPreorderNeeds()">Tồn kho hiện tại${sortArrow(preorderNeedsSort,'stock')}</th>
-      <th onclick="toggleSort(preorderNeedsSort,'needed'); renderPreorderNeeds()">Tổng SL đặt trước${sortArrow(preorderNeedsSort,'needed')}</th>
-      <th onclick="toggleSort(preorderNeedsSort,'diff'); renderPreorderNeeds()">Chênh lệch tồn kho${sortArrow(preorderNeedsSort,'diff')}</th>
-      <th onclick="toggleSort(preorderNeedsSort,'status'); renderPreorderNeeds()">Trạng thái tồn kho${sortArrow(preorderNeedsSort,'status')}</th>
+      ${cfHeader('pre','code','Mã SP',preorderNeedsSort,"toggleSort(preorderNeedsSort,'code'); renderPreorderNeeds()",allNeeds,r=>r.code,null,'renderPreorderNeeds')}
+      ${cfHeader('pre','name','Tên sản phẩm',preorderNeedsSort,"toggleSort(preorderNeedsSort,'name'); renderPreorderNeeds()",allNeeds,r=>r.name,null,'renderPreorderNeeds')}
+      ${cfHeader('pre','stock','Tồn kho hiện tại',preorderNeedsSort,"toggleSort(preorderNeedsSort,'stock'); renderPreorderNeeds()",allNeeds,r=>r.stock,null,'renderPreorderNeeds')}
+      ${cfHeader('pre','needed','Tổng SL đặt trước',preorderNeedsSort,"toggleSort(preorderNeedsSort,'needed'); renderPreorderNeeds()",allNeeds,r=>r.needed,null,'renderPreorderNeeds')}
+      ${cfHeader('pre','diff','Chênh lệch tồn kho',preorderNeedsSort,"toggleSort(preorderNeedsSort,'diff'); renderPreorderNeeds()",allNeeds,r=>r.diff,null,'renderPreorderNeeds')}
+      ${cfHeader('pre','status','Trạng thái tồn kho',preorderNeedsSort,"toggleSort(preorderNeedsSort,'status'); renderPreorderNeeds()",allNeeds,r=>stockDiffStatus(r.diff).key,(r,raw)=>STOCK_DIFF_LABELS[raw],'renderPreorderNeeds')}
     </tr></thead><tbody>
     ${needs.length? needs.map(r=>{ const st = stockDiffStatus(r.diff); return `<tr><td>${r.code}</td><td>${r.name}</td><td>${r.stock}</td><td>${r.needed}</td><td style="font-weight:800">${r.diff>0?'+':''}${r.diff}</td><td>${st.dot} ${st.label}</td></tr>`; }).join('') : `<tr><td colspan="6" class="empty">${allNeeds.length? 'Không có dòng nào khớp bộ lọc đang chọn' : 'Chưa có nhu cầu preorder nào'}</td></tr>`}
     </tbody></table></div>
-    <div style="position:relative;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      ${allNeeds.length? `<button class="btn btn-secondary btn-sm" onclick="togglePreorderFilter()">🔽 Lọc trạng thái${preorderNeedsFilter.length? ' ('+preorderNeedsFilter.length+')':''}</button>` : ''}
-      ${allNeeds.length? `<button class="btn btn-secondary" onclick="exportPreorderNeeds()">⬇ Xuất file cần đặt hàng (Excel)</button>` : ''}
-      ${preorderFilterOpen? `
-      <div class="card" style="position:absolute;bottom:36px;left:0;z-index:10;padding:10px;min-width:190px;box-shadow:0 4px 16px rgba(0,0,0,.15)">
-        <div style="font-weight:700;font-size:12px;margin-bottom:6px">Chọn trạng thái hiển thị</div>
-        ${Object.entries(STOCK_DIFF_LABELS).map(([k,label])=>`
-          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;padding:3px 0;cursor:pointer">
-            <input type="checkbox" ${(preorderNeedsFilter.length===0||preorderNeedsFilter.includes(k))?'checked':''} onchange="togglePreorderFilterKey('${k}')"> ${label}
-          </label>`).join('')}
-        <div style="display:flex;gap:6px;margin-top:6px">
-          <button class="btn btn-ghost btn-sm" onclick="preorderNeedsFilter=[]; renderPreorderNeeds()">Xóa lọc</button>
-          <button class="btn btn-ghost btn-sm" onclick="togglePreorderFilter()">Đóng</button>
-        </div>
-      </div>`:''}
-    </div>
   `;
+  afterColFilterRender();
 }
 let productModalImage = '';
 function openProductModal(productId){
@@ -930,15 +921,22 @@ function priceSortVal(p, key){
   return p[key];
 }
 function renderPricing(){
-  const list = [...DB.products];
+  const allProducts = [...DB.products];
+  const list = allProducts.filter(p=>
+       cfMatches('price','code',p.code)
+    && cfMatches('price','name',p.name)
+    && cfMatches('price','prev',previousPrice(p))
+    && cfMatches('price','sellPrice',p.sellPrice)
+  );
   list.sort((a,b)=> cmpVals(priceSortVal(a,priceSort.key), priceSortVal(b,priceSort.key)) * priceSort.dir);
   document.getElementById('content').innerHTML = `
+    ${cfActiveCount('price')? `<div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('price','renderPricing')">✕ Xóa tất cả bộ lọc cột</button></div>`:''}
     <div class="table-wrap"><table><thead><tr>
       <th></th>
-      <th onclick="toggleSort(priceSort,'code'); renderPricing()">Mã SP${sortArrow(priceSort,'code')}</th>
-      <th onclick="toggleSort(priceSort,'name'); renderPricing()">Tên sản phẩm${sortArrow(priceSort,'name')}</th>
-      <th onclick="toggleSort(priceSort,'prev'); renderPricing()">Giá bán gần nhất${sortArrow(priceSort,'prev')}</th>
-      <th onclick="toggleSort(priceSort,'sellPrice'); renderPricing()">Giá bán hiện tại${sortArrow(priceSort,'sellPrice')}</th>
+      ${cfHeader('price','code','Mã SP',priceSort,"toggleSort(priceSort,'code'); renderPricing()",allProducts,p=>p.code,null,'renderPricing')}
+      ${cfHeader('price','name','Tên sản phẩm',priceSort,"toggleSort(priceSort,'name'); renderPricing()",allProducts,p=>p.name,null,'renderPricing')}
+      ${cfHeader('price','prev','Giá bán gần nhất',priceSort,"toggleSort(priceSort,'prev'); renderPricing()",allProducts,p=>previousPrice(p),(p,raw)=>raw!==null?fmt(raw):'—','renderPricing')}
+      ${cfHeader('price','sellPrice','Giá bán hiện tại',priceSort,"toggleSort(priceSort,'sellPrice'); renderPricing()",allProducts,p=>p.sellPrice,(p,raw)=>fmt(raw),'renderPricing')}
       <th>Giá bán mới</th><th>Lịch sử giá</th>
     </tr></thead><tbody>
     ${list.length? list.map(p=>{
@@ -959,9 +957,10 @@ function renderPricing(){
           <button class="btn btn-primary btn-sm" onclick="savePrice('${p.id}')">Lưu</button>
         </td>
         <td><button class="btn btn-ghost btn-sm" onclick="openPriceHistoryModal('${p.id}')">Xem (${(p.priceHistory||[]).length})</button></td>
-      </tr>`;}).join('') : `<tr><td colspan="7" class="empty">Chưa có sản phẩm nào trong kho</td></tr>`}
+      </tr>`;}).join('') : `<tr><td colspan="7" class="empty">${allProducts.length? 'Không có sản phẩm nào khớp bộ lọc' : 'Chưa có sản phẩm nào trong kho'}</td></tr>`}
     </tbody></table></div>
   `;
+  afterColFilterRender();
 }
 function savePrice(productId){
   const p = DB.products.find(x=>x.id===productId);
@@ -1037,11 +1036,15 @@ function renderOrders(){
         <option value="">Tất cả thanh toán</option>
         ${PAYMENT_STATUSES.map(s=>`<option value="${s.key}" ${ordUi.paymentFilter===s.key?'selected':''}>${s.label}</option>`).join('')}
       </select>
+      <select class="inline-select" style="max-width:180px" onchange="ordUi.paymentMethodFilter=this.value; renderOrdersResults()">
+        <option value="">Tất cả hình thức TT</option>
+        ${PAYMENT_METHODS_LIST.map(s=>`<option value="${s.key}" ${ordUi.paymentMethodFilter===s.key?'selected':''}>${s.label}</option>`).join('')}
+      </select>
       <select class="inline-select" style="max-width:170px" onchange="ordUi.carrierFilter=this.value; renderOrdersResults()">
         <option value="">Tất cả vận chuyển</option>
         ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${ordUi.carrierFilter===k?'selected':''}>${v}</option>`).join('')}
       </select>
-      ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
+      ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.paymentMethodFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.paymentMethodFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
       <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
       <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
       <span class="muted small" id="ordCount"></span>
@@ -1066,6 +1069,7 @@ function renderOrdersResults(){
       (o.customerName+' '+o.phone+' '+o.code).toLowerCase().includes(q)
       && (!ordUi.statusFilter || o.status===ordUi.statusFilter)
       && (!ordUi.paymentFilter || o.paymentStatus===ordUi.paymentFilter)
+      && (!ordUi.paymentMethodFilter || o.paymentMethod===ordUi.paymentMethodFilter)
       && (!ordUi.carrierFilter || o.carrier===ordUi.carrierFilter)
     );
   const list = baseList.filter(o=>
@@ -1076,6 +1080,7 @@ function renderOrdersResults(){
     && cfMatches('ord','total',orderTotal(o))
     && cfMatches('ord','status',o.status)
     && cfMatches('ord','paymentStatus',o.paymentStatus)
+    && cfMatches('ord','paymentMethod',o.paymentMethod)
     && cfMatches('ord','updatedAt',fmtDate(o.updatedAt||o.createdAt))
   );
   list.sort((a,b)=> cmpVals(ordSortVal(a,ordSort.key), ordSortVal(b,ordSort.key)) * ordSort.dir);
@@ -1083,8 +1088,8 @@ function renderOrdersResults(){
   document.getElementById('ordResults').innerHTML = `
     ${cfActiveCount('ord')? `<div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('ord','renderOrdersResults')">✕ Xóa tất cả bộ lọc cột</button></div>`:''}
     <div class="table-wrap"><table style="table-layout:fixed"><colgroup>
-      <col style="width:9%"><col style="width:7%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
-      <col style="width:9%"><col style="width:13%"><col style="width:11%"><col style="width:9%"><col style="width:10%">
+      <col style="width:9%"><col style="width:5%"><col style="width:7%"><col style="width:13%"><col style="width:12%">
+      <col style="width:8%"><col style="width:13%"><col style="width:14%"><col style="width:9%"><col style="width:10%">
     </colgroup><thead><tr>
       ${cfHeader('ord','code','Mã đơn',ordSort,"toggleSort(ordSort,'code'); renderOrdersResults()",baseList,o=>o.code,null,'renderOrdersResults')}
       ${cfHeader('ord','trackingCode','Mã vận đơn',ordSort,"toggleSort(ordSort,'trackingCode'); renderOrdersResults()",baseList,o=>o.trackingCode||'',null,'renderOrdersResults')}
@@ -1093,7 +1098,11 @@ function renderOrdersResults(){
       <th>Sản phẩm</th>
       ${cfHeader('ord','total','Giá trị',ordSort,"toggleSort(ordSort,'total'); renderOrdersResults()",baseList,o=>orderTotal(o),(o,raw)=>fmt(raw),'renderOrdersResults')}
       ${cfHeader('ord','status','Trạng thái đơn',ordSort,"toggleSort(ordSort,'status'); renderOrdersResults()",baseList,o=>o.status,(o,raw)=>statusMeta(raw,ORDER_STATUSES).label,'renderOrdersResults')}
-      ${cfHeader('ord','paymentStatus','Thanh toán',ordSort,"toggleSort(ordSort,'paymentStatus'); renderOrdersResults()",baseList,o=>o.paymentStatus,(o,raw)=>statusMeta(raw,PAYMENT_STATUSES).label,'renderOrdersResults')}
+      <th class="has-filter" onclick="toggleSort(ordSort,'paymentStatus'); renderOrdersResults()">
+        <div class="th-label">Thanh toán${sortArrow(ordSort,'paymentStatus')}</div>
+        ${cfFilterButton('ord','paymentStatus',baseList,o=>o.paymentStatus,(o,raw)=>statusMeta(raw,PAYMENT_STATUSES).label,'renderOrdersResults','Lọc trạng thái')}
+        ${cfFilterButton('ord','paymentMethod',baseList,o=>o.paymentMethod,(o,raw)=>PAYMENT_METHODS[raw]||raw,'renderOrdersResults','Lọc hình thức')}
+      </th>
       <th>Thao tác</th>
       ${cfHeader('ord','updatedAt','Cập nhật lần cuối',ordSort,"toggleSort(ordSort,'updatedAt'); renderOrdersResults()",baseList,o=>fmtDate(o.updatedAt||o.createdAt),null,'renderOrdersResults')}
     </tr></thead><tbody>
@@ -1106,7 +1115,7 @@ function renderOrdersResults(){
         <td class="small">${orderItemsListHtml(o)}</td>
         <td style="font-weight:700;font-size:13.5px;white-space:nowrap">${fmt(orderTotal(o))}</td>
         <td>${selectHtml(o.id,o.status,ORDER_STATUSES,'updateOrderStatus')}</td>
-        <td>${selectHtml(o.id,o.paymentStatus,PAYMENT_STATUSES,'updatePaymentStatus')}</td>
+        <td>${selectHtml(o.id,o.paymentStatus,PAYMENT_STATUSES,'updatePaymentStatus')}<div style="margin-top:5px">${selectHtml(o.id,o.paymentMethod,PAYMENT_METHODS_LIST,'updatePaymentMethod')}</div></td>
         <td>
           <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
             <button class="btn btn-ghost btn-sm" onclick="openOrderDetail('${o.id}')" style="width:100%">Chi tiết</button>
@@ -1142,6 +1151,11 @@ function updateOrderStatus(orderId, newStatus){
 function updatePaymentStatus(orderId, newStatus){
   const o = DB.orders.find(x=>x.id===orderId); if(!o) return;
   o.paymentStatus = newStatus; o.updatedAt = todayISO();
+  saveDB(); renderOrdersResults();
+}
+function updatePaymentMethod(orderId, newMethod){
+  const o = DB.orders.find(x=>x.id===orderId); if(!o) return;
+  o.paymentMethod = newMethod; o.updatedAt = todayISO();
   saveDB(); renderOrdersResults();
 }
 function deleteOrderConfirm(orderId){
