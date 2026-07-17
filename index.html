@@ -1910,16 +1910,44 @@ function orderPackingSlipTableHtml(o){
     <tbody>${bodyRows}</tbody>
   </table>`;
 }
+function estimatePackingSlipUnits(o){
+  // Ước lượng số "dòng" chiều cao mà 1 đơn sẽ chiếm, để tự chia trang không cho Word cắt ngang 1 đơn
+  const items = (o.items && o.items.length) ? o.items : [{name:'—', qty:''}];
+  const custText = (o.customerName||'') + (o.phone ? ' - '+o.phone : '') + (o.address ? ' '+o.address : '');
+  const custLines = Math.max(1, Math.ceil(custText.length / 40));
+  return 1 /*hàng tiêu đề*/ + Math.max(items.length, custLines) + 0.6 /*khoảng cách + đường kẻ cắt*/;
+}
 function exportPackingSlipWord(){
   const orders = (ordUi.filteredList && ordUi.filteredList.length) ? ordUi.filteredList : DB.orders;
   if(!orders.length){ alert('Không có đơn hàng nào phù hợp để xuất phiếu đóng gói.'); return; }
   // Mỗi đơn: bảng dữ liệu + 1 đường kẻ đứt ngắn phía dưới làm dấu cắt ngang, cách nhau đúng 1 dòng
-  const slipHtml = o => `${orderPackingSlipTableHtml(o)}
-    <div style="border-bottom:1px dashed #999;margin-top:8px;margin-bottom:14px;line-height:1px;font-size:1px">&nbsp;</div>`;
-  let leftHtml = '', rightHtml = '';
-  orders.forEach((o,idx)=>{ if(idx%2===0) leftHtml += slipHtml(o); else rightHtml += slipHtml(o); });
-  // Dùng 1 bảng khung ngoài 1 hàng x 2 cột, mỗi cột chứa TOÀN BỘ các phiếu của cột đó xếp chồng liên tục
-  // => không ghép cặp theo từng hàng nên không bị khoảng trắng lớn khi 1 đơn ngắn nằm cạnh 1 đơn dài
+  const slipHtml = o => `<div style="page-break-inside:avoid;mso-pagination:avoid">${orderPackingSlipTableHtml(o)}
+    <div style="border-bottom:1px dashed #999;margin-top:8px;margin-bottom:14px;line-height:1px;font-size:1px">&nbsp;</div></div>`;
+
+  // Tự chia trang: điền hết cột trái tới khi gần đầy mới sang cột phải, đầy cả 2 cột thì sang trang mới.
+  // Việc này đảm bảo KHÔNG có đơn nào bị cắt ngang giữa 2 trang (Word tự ngắt trang giữa các dòng của bảng
+  // nếu để nó tự chia, nên ta phải chủ động ước lượng và ép ngắt trang trước khi 1 đơn không đủ chỗ).
+  const PAGE_CAPACITY = 17; // số "dòng" ước lượng vừa 1 cột trên 1 trang A4 ngang (canh dư an toàn)
+  const pages = [];
+  let cur = {left:[], right:[]}, leftUsed=0, rightUsed=0, onRight=false;
+  orders.forEach(o=>{
+    const units = estimatePackingSlipUnits(o);
+    if(!onRight && leftUsed>0 && leftUsed+units>PAGE_CAPACITY) onRight = true;
+    if(onRight && rightUsed>0 && rightUsed+units>PAGE_CAPACITY){
+      pages.push(cur); cur = {left:[], right:[]}; leftUsed=0; rightUsed=0; onRight=false;
+    }
+    if(!onRight){ cur.left.push(o); leftUsed+=units; }
+    else { cur.right.push(o); rightUsed+=units; }
+  });
+  if(cur.left.length || cur.right.length) pages.push(cur);
+
+  const pagesHtml = pages.map((p,i)=>`
+    ${i>0 ? `<br clear="all" style="page-break-before:always;mso-special-character:line-break">` : ''}
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>
+      <td style="width:50%;vertical-align:top;padding:0 12px 0 0;border-right:1px dashed #999">${p.left.map(slipHtml).join('')}</td>
+      <td style="width:50%;vertical-align:top;padding:0 0 0 12px">${p.right.map(slipHtml).join('')}</td>
+    </tr></table>`).join('');
+
   const today = new Date().toISOString().slice(0,10);
   const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
   <head><meta charset="utf-8"><title>Phieu dong goi</title>
@@ -1929,13 +1957,9 @@ function exportPackingSlipWord(){
     div.Section1 { page:Section1; }
     body{ margin:0; font-family:Arial,sans-serif; }
     table{ border-collapse:collapse; }
+    tr{ page-break-inside:avoid; mso-pagination:avoid; }
   </style></head>
-  <body><div class="Section1">
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>
-      <td style="width:50%;vertical-align:top;padding:0 12px 0 0;border-right:1px dashed #999">${leftHtml}</td>
-      <td style="width:50%;vertical-align:top;padding:0 0 0 12px">${rightHtml}</td>
-    </tr></table>
-  </div></body></html>`;
+  <body><div class="Section1">${pagesHtml}</div></body></html>`;
   const blob = new Blob(['\ufeff', html], {type:'application/msword'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = `phieu-dong-goi-${today}.doc`;
