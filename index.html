@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{
@@ -1047,7 +1048,7 @@ function renderOrders(){
       ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.paymentMethodFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.paymentMethodFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
       <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
       <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
-      <button class="btn btn-primary" onclick="exportPackingSlipWord()">🖨 Phiếu đóng gói (Word)</button>
+      <button class="btn btn-primary" onclick="exportPackingSlipPDF()">🖨 Phiếu đóng gói (PDF)</button>
       <span class="muted small" id="ordCount"></span>
     </div>
     <div id="ordResults"></div>
@@ -1910,36 +1911,29 @@ function orderPackingSlipTableHtml(o){
     <tbody>${bodyRows}</tbody>
   </table>`;
 }
-function exportPackingSlipWord(){
+function exportPackingSlipPDF(){
   const orders = (ordUi.filteredList && ordUi.filteredList.length) ? ordUi.filteredList : DB.orders;
   if(!orders.length){ alert('Không có đơn hàng nào phù hợp để xuất phiếu đóng gói.'); return; }
-  const blocks = orders.map(o=>orderPackingSlipTableHtml(o));
-  // Xếp mỗi 2 phiếu vào 1 hàng của bảng khung ngoài => 2 cột trên giấy A4 ngang, cắt theo hàng/cột
-  let gridRows = '';
-  for(let i=0;i<blocks.length;i+=2){
-    gridRows += `<tr>
-      <td style="width:50%;padding:0 8px 14px 0;border-right:1px dashed #999;vertical-align:top">${blocks[i]}</td>
-      <td style="width:50%;padding:0 0 14px 8px;vertical-align:top">${blocks[i+1]||''}</td>
-    </tr>
-    <tr><td colspan="2" style="border-bottom:1px dashed #999;padding:0;line-height:1px">&nbsp;</td></tr>`;
-  }
+  const slipHtml = o => `<div class="slip" style="page-break-inside:avoid;break-inside:avoid;border:1px dashed #999;padding:6px;margin-bottom:8px">${orderPackingSlipTableHtml(o)}</div>`;
+  let leftHtml = '', rightHtml = '';
+  orders.forEach((o,idx)=>{ if(idx%2===0) leftHtml += slipHtml(o); else rightHtml += slipHtml(o); });
+  const root = document.createElement('div');
+  root.id = 'pdfSlipRoot';
+  root.style.cssText = 'position:fixed;left:-99999px;top:0;width:1400px;font-family:Arial,sans-serif;background:#fff;padding:4px';
+  root.innerHTML = `<div style="display:flex;gap:16px;align-items:flex-start">
+    <div style="flex:1;min-width:0">${leftHtml}</div>
+    <div style="flex:1;min-width:0">${rightHtml}</div>
+  </div>`;
+  document.body.appendChild(root);
   const today = new Date().toISOString().slice(0,10);
-  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-  <head><meta charset="utf-8"><title>Phieu dong goi</title>
-  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
-  <style>
-    @page Section1 { size:29.7cm 21cm; mso-page-orientation:landscape; margin:1cm 1.2cm 1cm 1.2cm; }
-    div.Section1 { page:Section1; }
-    body{ margin:0; }
-    table{ border-collapse:collapse; }
-  </style></head>
-  <body><div class="Section1">
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed">${gridRows}</table>
-  </div></body></html>`;
-  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = `phieu-dong-goi-${today}.doc`;
-  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  html2pdf().set({
+    margin: [8,8,8,8],
+    filename: `phieu-dong-goi-${today}.pdf`,
+    image: { type:'jpeg', quality:0.98 },
+    html2canvas: { scale:2, useCORS:true, windowWidth:1400 },
+    jsPDF: { unit:'mm', format:'a4', orientation:'landscape' },
+    pagebreak: { mode:['css','legacy'], avoid:'.slip' }
+  }).from(root).save().then(()=>{ root.remove(); }).catch(()=>{ root.remove(); });
 }
 function exportPreorderNeeds(){
   const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Chênh lệch tồn kho':r.diff,'Trạng thái tồn kho':stockDiffStatus(r.diff).label}));
