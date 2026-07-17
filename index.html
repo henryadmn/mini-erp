@@ -1898,7 +1898,7 @@ function orderPackingSlipTableHtml(o){
     bodyRows += '</tr>';
   });
   return `
-  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:11pt;table-layout:fixed">
+  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:10pt;table-layout:fixed">
     <colgroup><col style="width:14%"><col style="width:15%"><col style="width:31%"><col style="width:30%"><col style="width:10%"></colgroup>
     <thead><tr>
       <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Mã đơn</th>
@@ -1924,36 +1924,28 @@ function exportPackingSlipWord(){
   const slipHtml = o => `<div style="page-break-inside:avoid;mso-pagination:avoid">${orderPackingSlipTableHtml(o)}
     <div style="border-bottom:1px dashed #999;margin-top:8px;margin-bottom:14px;line-height:1px;font-size:1px">&nbsp;</div></div>`;
 
-  // Tự chia trang: điền hết cột trái tới khi gần đầy mới sang cột phải, đầy cả 2 cột thì sang trang mới.
-  // Việc này đảm bảo KHÔNG có đơn nào bị cắt ngang giữa 2 trang (Word tự ngắt trang giữa các dòng của bảng
-  // nếu để nó tự chia, nên ta phải chủ động ước lượng và ép ngắt trang trước khi 1 đơn không đủ chỗ).
-  const PAGE_CAPACITY = 17; // số "dòng" ước lượng vừa 1 cột trên 1 trang A4 ngang (canh dư an toàn)
+  // Tự chia trang (1 cột duy nhất): cộng dồn số "dòng" ước lượng, hết chỗ trên trang thì ép ngắt trang
+  // trước khi thêm đơn kế tiếp => không có đơn nào bị cắt ngang giữa 2 trang.
+  const PAGE_CAPACITY = 34; // số "dòng" ước lượng vừa 1 trang A4 đứng, canh dư an toàn
   const pages = [];
-  let cur = {left:[], right:[]}, leftUsed=0, rightUsed=0, onRight=false;
+  let cur = [], used = 0;
   orders.forEach(o=>{
     const units = estimatePackingSlipUnits(o);
-    if(!onRight && leftUsed>0 && leftUsed+units>PAGE_CAPACITY) onRight = true;
-    if(onRight && rightUsed>0 && rightUsed+units>PAGE_CAPACITY){
-      pages.push(cur); cur = {left:[], right:[]}; leftUsed=0; rightUsed=0; onRight=false;
-    }
-    if(!onRight){ cur.left.push(o); leftUsed+=units; }
-    else { cur.right.push(o); rightUsed+=units; }
+    if(used>0 && used+units>PAGE_CAPACITY){ pages.push(cur); cur=[]; used=0; }
+    cur.push(o); used += units;
   });
-  if(cur.left.length || cur.right.length) pages.push(cur);
+  if(cur.length) pages.push(cur);
 
   const pagesHtml = pages.map((p,i)=>`
     ${i>0 ? `<br clear="all" style="page-break-before:always;mso-special-character:line-break">` : ''}
-    <table style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>
-      <td style="width:50%;vertical-align:top;padding:0 12px 0 0;border-right:1px dashed #999">${p.left.map(slipHtml).join('')}</td>
-      <td style="width:50%;vertical-align:top;padding:0 0 0 12px">${p.right.map(slipHtml).join('')}</td>
-    </tr></table>`).join('');
+    ${p.map(slipHtml).join('')}`).join('');
 
   const today = new Date().toISOString().slice(0,10);
   const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
   <head><meta charset="utf-8"><title>Phieu dong goi</title>
   <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
   <style>
-    @page Section1 { size:29.7cm 21cm; mso-page-orientation:landscape; margin:1cm 1.2cm 1cm 1.2cm; }
+    @page Section1 { size:21cm 29.7cm; margin:1.5cm 1.5cm 1.5cm 1.5cm; }
     div.Section1 { page:Section1; }
     body{ margin:0; font-family:Arial,sans-serif; }
     table{ border-collapse:collapse; }
