@@ -1912,19 +1912,31 @@ function orderPackingSlipTableHtml(o){
   </table>`;
 }
 function exportPackingSlipPDF(){
+  if(typeof html2pdf === 'undefined'){ alert('Không tải được thư viện xuất PDF (có thể do mất kết nối mạng). Vui lòng kiểm tra kết nối và thử lại.'); return; }
   const orders = (ordUi.filteredList && ordUi.filteredList.length) ? ordUi.filteredList : DB.orders;
   if(!orders.length){ alert('Không có đơn hàng nào phù hợp để xuất phiếu đóng gói.'); return; }
   const slipHtml = o => `<div class="slip" style="page-break-inside:avoid;break-inside:avoid;border:1px dashed #999;padding:6px;margin-bottom:8px">${orderPackingSlipTableHtml(o)}</div>`;
   let leftHtml = '', rightHtml = '';
   orders.forEach((o,idx)=>{ if(idx%2===0) leftHtml += slipHtml(o); else rightHtml += slipHtml(o); });
+
+  // Lớp phủ che toàn màn hình trong lúc tạo PDF (thay vì giấu nội dung ở toạ độ âm,
+  // vì cách đó khiến thư viện chụp ảnh không nhận diện được nội dung -> PDF trắng)
+  const overlay = document.createElement('div');
+  overlay.id = 'pdfLoadingOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:99998;display:flex;align-items:center;justify-content:center;font-family:Arial,sans-serif;font-size:15px;color:#333';
+  overlay.textContent = 'Đang tạo PDF, vui lòng đợi...';
+  document.body.appendChild(overlay);
+
   const root = document.createElement('div');
   root.id = 'pdfSlipRoot';
-  root.style.cssText = 'position:fixed;left:-99999px;top:0;width:1400px;font-family:Arial,sans-serif;background:#fff;padding:4px';
+  root.style.cssText = 'position:fixed;top:0;left:0;width:1400px;font-family:Arial,sans-serif;background:#fff;padding:4px;z-index:99997';
   root.innerHTML = `<div style="display:flex;gap:16px;align-items:flex-start">
     <div style="flex:1;min-width:0">${leftHtml}</div>
     <div style="flex:1;min-width:0">${rightHtml}</div>
   </div>`;
   document.body.appendChild(root);
+
+  const cleanup = ()=>{ root.remove(); overlay.remove(); };
   const today = new Date().toISOString().slice(0,10);
   html2pdf().set({
     margin: [8,8,8,8],
@@ -1933,7 +1945,7 @@ function exportPackingSlipPDF(){
     html2canvas: { scale:2, useCORS:true, windowWidth:1400 },
     jsPDF: { unit:'mm', format:'a4', orientation:'landscape' },
     pagebreak: { mode:['css','legacy'], avoid:'.slip' }
-  }).from(root).save().then(()=>{ root.remove(); }).catch(()=>{ root.remove(); });
+  }).from(root).save().then(cleanup).catch((err)=>{ cleanup(); alert('Có lỗi khi tạo PDF: '+(err&&err.message?err.message:err)); });
 }
 function exportPreorderNeeds(){
   const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Chênh lệch tồn kho':r.diff,'Trạng thái tồn kho':stockDiffStatus(r.diff).label}));
