@@ -1915,7 +1915,10 @@ function exportPackingSlipPDF(){
   if(typeof html2pdf === 'undefined'){ alert('Không tải được thư viện xuất PDF (có thể do mất kết nối mạng). Vui lòng kiểm tra kết nối và thử lại.'); return; }
   const orders = (ordUi.filteredList && ordUi.filteredList.length) ? ordUi.filteredList : DB.orders;
   if(!orders.length){ alert('Không có đơn hàng nào phù hợp để xuất phiếu đóng gói.'); return; }
-  const slipHtml = o => `<div class="slip" style="page-break-inside:avoid;break-inside:avoid;border:1px dashed #999;padding:6px;margin-bottom:8px">${orderPackingSlipTableHtml(o)}</div>`;
+  const slipHtml = o => `<div class="slip" style="page-break-inside:avoid;break-inside:avoid;margin-bottom:14px">
+    ${orderPackingSlipTableHtml(o)}
+    <div style="border-bottom:1px dashed #999;margin-top:8px;line-height:0">&nbsp;</div>
+  </div>`;
   let leftHtml = '', rightHtml = '';
   orders.forEach((o,idx)=>{ if(idx%2===0) leftHtml += slipHtml(o); else rightHtml += slipHtml(o); });
 
@@ -1930,9 +1933,9 @@ function exportPackingSlipPDF(){
   const root = document.createElement('div');
   root.id = 'pdfSlipRoot';
   root.style.cssText = 'position:fixed;top:0;left:0;width:1400px;font-family:Arial,sans-serif;background:#fff;padding:4px;z-index:99997';
-  root.innerHTML = `<div style="display:flex;gap:16px;align-items:flex-start">
-    <div style="flex:1;min-width:0">${leftHtml}</div>
-    <div style="flex:1;min-width:0">${rightHtml}</div>
+  root.innerHTML = `<div style="display:flex;align-items:flex-start">
+    <div style="flex:1;min-width:0;padding-right:14px;border-right:1px dashed #999">${leftHtml}</div>
+    <div style="flex:1;min-width:0;padding-left:14px">${rightHtml}</div>
   </div>`;
   document.body.appendChild(root);
 
