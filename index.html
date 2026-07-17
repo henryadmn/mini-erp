@@ -1047,6 +1047,7 @@ function renderOrders(){
       ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.paymentMethodFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.paymentMethodFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
       <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
       <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
+      <button class="btn btn-primary" onclick="exportPackingSlipExcel()">🖨 Phiếu đóng gói (Excel)</button>
       <span class="muted small" id="ordCount"></span>
     </div>
     <div id="ordResults"></div>
@@ -1084,6 +1085,7 @@ function renderOrdersResults(){
     && cfMatches('ord','updatedAt',fmtDate(o.updatedAt||o.createdAt))
   );
   list.sort((a,b)=> cmpVals(ordSortVal(a,ordSort.key), ordSortVal(b,ordSort.key)) * ordSort.dir);
+  ordUi.filteredList = list;
   document.getElementById('ordCount').textContent = list.length+' đơn'+(cfActiveCount('ord')? ' (đã lọc cột)':'');
   document.getElementById('ordResults').innerHTML = `
     ${cfActiveCount('ord')? `<div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('ord','renderOrdersResults')">✕ Xóa tất cả bộ lọc cột</button></div>`:''}
@@ -1877,6 +1879,43 @@ function exportCarrierExcel(carrier){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'DonHang');
   XLSX.writeFile(wb, `don-hang-${carrier}-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+function exportPackingSlipExcel(){
+  const orders = (ordUi.filteredList && ordUi.filteredList.length) ? ordUi.filteredList : DB.orders;
+  if(!orders.length){ alert('Không có đơn hàng nào phù hợp để xuất phiếu đóng gói.'); return; }
+  const rows = [];
+  const merges = [];
+  let r = 1; // hàng dữ liệu bắt đầu từ 1 (0 là header)
+  orders.forEach(o=>{
+    const items = (o.items && o.items.length) ? o.items : [{name:'—', qty:''}];
+    const custInfo = o.customerName + (o.phone ? ' - '+o.phone : '') + (o.address ? '\n'+o.address : '');
+    items.forEach((it, idx)=>{
+      rows.push({
+        'Mã đơn': idx===0 ? o.code : '',
+        'Vận chuyển': idx===0 ? (CARRIERS[o.carrier]||o.carrier||'') : '',
+        'Khách hàng': idx===0 ? custInfo : '',
+        'Sản phẩm': it.name,
+        'Số lượng': it.qty,
+      });
+    });
+    if(items.length>1){
+      merges.push({s:{r:r,c:0}, e:{r:r+items.length-1,c:0}});
+      merges.push({s:{r:r,c:1}, e:{r:r+items.length-1,c:1}});
+      merges.push({s:{r:r,c:2}, e:{r:r+items.length-1,c:2}});
+    }
+    r += items.length;
+    // hàng trắng để dễ cắt phân biệt giữa các đơn
+    rows.push({'Mã đơn':'', 'Vận chuyển':'', 'Khách hàng':'', 'Sản phẩm':'', 'Số lượng':''});
+    r += 1;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:14},{wch:16},{wch:34},{wch:28},{wch:10}];
+  ws['!merges'] = merges;
+  ws['!pageSetup'] = { orientation:'portrait', fitToWidth:1, fitToHeight:0, paperSize:9 }; // 9 = A4
+  ws['!margins'] = { left:0.3, right:0.3, top:0.4, bottom:0.4, header:0, footer:0 };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'PhieuDongGoi');
+  XLSX.writeFile(wb, `phieu-dong-goi-${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 function exportPreorderNeeds(){
   const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Chênh lệch tồn kho':r.diff,'Trạng thái tồn kho':stockDiffStatus(r.diff).label}));
