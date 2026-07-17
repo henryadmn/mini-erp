@@ -1047,7 +1047,7 @@ function renderOrders(){
       ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.paymentMethodFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.paymentMethodFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
       <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
       <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
-      <button class="btn btn-primary" onclick="exportPackingSlipExcel()">🖨 Phiếu đóng gói (Excel)</button>
+      <button class="btn btn-primary" onclick="exportPackingSlipWord()">🖨 Phiếu đóng gói (Word)</button>
       <span class="muted small" id="ordCount"></span>
     </div>
     <div id="ordResults"></div>
@@ -1880,42 +1880,66 @@ function exportCarrierExcel(carrier){
   XLSX.utils.book_append_sheet(wb, ws, 'DonHang');
   XLSX.writeFile(wb, `don-hang-${carrier}-${new Date().toISOString().slice(0,10)}.xlsx`);
 }
-function exportPackingSlipExcel(){
+function orderPackingSlipTableHtml(o){
+  const items = (o.items && o.items.length) ? o.items : [{name:'—', qty:''}];
+  const rowspan = items.length;
+  const custInfo = escHtml(o.customerName||'') + (o.phone ? ' - '+escHtml(o.phone) : '') + (o.address ? '<br>'+escHtml(o.address) : '');
+  const carrierLabel = escHtml(CARRIERS[o.carrier]||o.carrier||'');
+  let bodyRows = '';
+  items.forEach((it, idx)=>{
+    bodyRows += '<tr>';
+    if(idx===0){
+      bodyRows += `<td rowspan="${rowspan}" style="border:1px solid #000;padding:5px 6px;vertical-align:top;font-weight:bold">${escHtml(o.code)}</td>`;
+      bodyRows += `<td rowspan="${rowspan}" style="border:1px solid #000;padding:5px 6px;vertical-align:top">${carrierLabel}</td>`;
+      bodyRows += `<td rowspan="${rowspan}" style="border:1px solid #000;padding:5px 6px;vertical-align:top">${custInfo}</td>`;
+    }
+    bodyRows += `<td style="border:1px solid #000;padding:5px 6px;vertical-align:top">${escHtml(it.name)}</td>`;
+    bodyRows += `<td style="border:1px solid #000;padding:5px 6px;vertical-align:top;text-align:center">${it.qty}</td>`;
+    bodyRows += '</tr>';
+  });
+  return `
+  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:11pt;table-layout:fixed">
+    <colgroup><col style="width:14%"><col style="width:15%"><col style="width:31%"><col style="width:30%"><col style="width:10%"></colgroup>
+    <thead><tr>
+      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Mã đơn</th>
+      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Vận chuyển</th>
+      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Khách hàng</th>
+      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Sản phẩm</th>
+      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Số lượng</th>
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+  </table>`;
+}
+function exportPackingSlipWord(){
   const orders = (ordUi.filteredList && ordUi.filteredList.length) ? ordUi.filteredList : DB.orders;
   if(!orders.length){ alert('Không có đơn hàng nào phù hợp để xuất phiếu đóng gói.'); return; }
-  const rows = [];
-  const merges = [];
-  let r = 1; // hàng dữ liệu bắt đầu từ 1 (0 là header)
-  orders.forEach(o=>{
-    const items = (o.items && o.items.length) ? o.items : [{name:'—', qty:''}];
-    const custInfo = o.customerName + (o.phone ? ' - '+o.phone : '') + (o.address ? '\n'+o.address : '');
-    items.forEach((it, idx)=>{
-      rows.push({
-        'Mã đơn': idx===0 ? o.code : '',
-        'Vận chuyển': idx===0 ? (CARRIERS[o.carrier]||o.carrier||'') : '',
-        'Khách hàng': idx===0 ? custInfo : '',
-        'Sản phẩm': it.name,
-        'Số lượng': it.qty,
-      });
-    });
-    if(items.length>1){
-      merges.push({s:{r:r,c:0}, e:{r:r+items.length-1,c:0}});
-      merges.push({s:{r:r,c:1}, e:{r:r+items.length-1,c:1}});
-      merges.push({s:{r:r,c:2}, e:{r:r+items.length-1,c:2}});
-    }
-    r += items.length;
-    // hàng trắng để dễ cắt phân biệt giữa các đơn
-    rows.push({'Mã đơn':'', 'Vận chuyển':'', 'Khách hàng':'', 'Sản phẩm':'', 'Số lượng':''});
-    r += 1;
-  });
-  const ws = XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{wch:14},{wch:16},{wch:34},{wch:28},{wch:10}];
-  ws['!merges'] = merges;
-  ws['!pageSetup'] = { orientation:'portrait', fitToWidth:1, fitToHeight:0, paperSize:9 }; // 9 = A4
-  ws['!margins'] = { left:0.3, right:0.3, top:0.4, bottom:0.4, header:0, footer:0 };
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'PhieuDongGoi');
-  XLSX.writeFile(wb, `phieu-dong-goi-${new Date().toISOString().slice(0,10)}.xlsx`);
+  const blocks = orders.map(o=>orderPackingSlipTableHtml(o));
+  // Xếp mỗi 2 phiếu vào 1 hàng của bảng khung ngoài => 2 cột trên giấy A4 ngang, cắt theo hàng/cột
+  let gridRows = '';
+  for(let i=0;i<blocks.length;i+=2){
+    gridRows += `<tr>
+      <td style="width:50%;padding:0 8px 14px 0;border-right:1px dashed #999;vertical-align:top">${blocks[i]}</td>
+      <td style="width:50%;padding:0 0 14px 8px;vertical-align:top">${blocks[i+1]||''}</td>
+    </tr>
+    <tr><td colspan="2" style="border-bottom:1px dashed #999;padding:0;line-height:1px">&nbsp;</td></tr>`;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+  <head><meta charset="utf-8"><title>Phieu dong goi</title>
+  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+  <style>
+    @page Section1 { size:29.7cm 21cm; mso-page-orientation:landscape; margin:1cm 1.2cm 1cm 1.2cm; }
+    div.Section1 { page:Section1; }
+    body{ margin:0; }
+    table{ border-collapse:collapse; }
+  </style></head>
+  <body><div class="Section1">
+    <table style="width:100%;border-collapse:collapse;table-layout:fixed">${gridRows}</table>
+  </div></body></html>`;
+  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `phieu-dong-goi-${today}.doc`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 function exportPreorderNeeds(){
   const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Chênh lệch tồn kho':r.diff,'Trạng thái tồn kho':stockDiffStatus(r.diff).label}));
