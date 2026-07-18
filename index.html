@@ -1147,6 +1147,11 @@ function updateOrderStatus(orderId, newStatus){
     o.items.forEach(it=>{ const p=DB.products.find(x=>x.id===it.productId); if(p) p.stock+=it.qty; });
     o.stockDeducted = false;
   }
+  // Đơn preorder khi đã đủ hàng và được xác nhận chờ giao hàng thì coi như đơn thường từ đây trở đi
+  // (không còn tính vào nhu cầu preorder / bảng "cần đặt hàng" nữa vì đã có hàng thật trong tay).
+  if(o.type==='preorder' && newStatus==='xac_nhan'){
+    o.type = 'normal';
+  }
   o.status = newStatus; o.updatedAt = todayISO();
   saveDB(); renderOrdersResults(); renderNav();
 }
@@ -1882,32 +1887,32 @@ function exportCarrierExcel(carrier){
 }
 function orderPackingSlipTableHtml(o){
   const items = (o.items && o.items.length) ? o.items : [{name:'—', qty:''}];
-  const rowspan = items.length;
   const custInfo = escHtml(o.customerName||'') + (o.phone ? ' - '+escHtml(o.phone) : '') + (o.address ? '<br>'+escHtml(o.address) : '');
   const carrierLabel = escHtml(CARRIERS[o.carrier]||o.carrier||'');
-  let bodyRows = '';
-  items.forEach((it, idx)=>{
-    bodyRows += '<tr>';
-    if(idx===0){
-      bodyRows += `<td rowspan="${rowspan}" style="border:1px solid #000;padding:5px 6px;vertical-align:top;font-weight:bold">${escHtml(o.code)}</td>`;
-      bodyRows += `<td rowspan="${rowspan}" style="border:1px solid #000;padding:5px 6px;vertical-align:top">${carrierLabel}</td>`;
-      bodyRows += `<td rowspan="${rowspan}" style="border:1px solid #000;padding:5px 6px;vertical-align:top">${custInfo}</td>`;
-    }
-    bodyRows += `<td style="border:1px solid #000;padding:5px 6px;vertical-align:top">${escHtml(it.name)}</td>`;
-    bodyRows += `<td style="border:1px solid #000;padding:5px 6px;vertical-align:top;text-align:center">${it.qty}</td>`;
-    bodyRows += '</tr>';
-  });
+  const productsHtml = items.map(it=>escHtml(it.name)).join('<br>');
+  const qtyHtml = items.map(it=>escHtml(String(it.qty))).join('<br>');
+  // Toàn bộ đơn (kể cả nhiều sản phẩm) được gói trong ĐÚNG 1 hàng dữ liệu duy nhất (sản phẩm/số lượng
+  // xuống dòng bằng <br> trong cùng 1 ô) thay vì mỗi sản phẩm 1 hàng riêng -> Word không có chỗ nào ở
+  // giữa các sản phẩm để chèn ngắt trang được nữa, đơn luôn giữ nguyên vẹn.
   return `
-  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:10pt;table-layout:fixed">
+  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:10pt;table-layout:fixed;page-break-inside:avoid">
     <colgroup><col style="width:14%"><col style="width:15%"><col style="width:31%"><col style="width:30%"><col style="width:10%"></colgroup>
-    <thead><tr>
-      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Mã đơn</th>
-      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Vận chuyển</th>
-      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Khách hàng</th>
-      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Sản phẩm</th>
-      <th style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2">Số lượng</th>
-    </tr></thead>
-    <tbody>${bodyRows}</tbody>
+    <tbody>
+      <tr style="page-break-inside:avoid;page-break-after:avoid;mso-pagination:avoid">
+        <td style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2;font-weight:bold">Mã đơn</td>
+        <td style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2;font-weight:bold">Vận chuyển</td>
+        <td style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2;font-weight:bold">Khách hàng</td>
+        <td style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2;font-weight:bold">Sản phẩm</td>
+        <td style="border:1px solid #000;padding:5px 6px;text-align:left;background:#F2F2F2;font-weight:bold">Số lượng</td>
+      </tr>
+      <tr style="page-break-inside:avoid;page-break-before:avoid;mso-pagination:avoid">
+        <td style="border:1px solid #000;padding:5px 6px;vertical-align:top;font-weight:bold">${escHtml(o.code)}</td>
+        <td style="border:1px solid #000;padding:5px 6px;vertical-align:top">${carrierLabel}</td>
+        <td style="border:1px solid #000;padding:5px 6px;vertical-align:top">${custInfo}</td>
+        <td style="border:1px solid #000;padding:5px 6px;vertical-align:top">${productsHtml}</td>
+        <td style="border:1px solid #000;padding:5px 6px;vertical-align:top;text-align:center">${qtyHtml}</td>
+      </tr>
+    </tbody>
   </table>`;
 }
 function estimatePackingSlipUnits(o){
