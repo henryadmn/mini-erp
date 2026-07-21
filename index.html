@@ -174,7 +174,7 @@ select.inline-select{padding:4px 16px 4px 6px;border-radius:6px;border:1px solid
 /* ======================= DATA LAYER ======================= */
 const SHEET_CONFIG_KEY = 'erp_sheet_config';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
-let DB = { products: [], orders: [], complaints: [], seq:{product:0, order:0, complaint:0} };
+let DB = { products: [], orders: [], complaints: [], incomingStock: [], seq:{product:0, order:0, complaint:0} };
 let activeTab = 'dashboard';
 let inv = { search:'' };
 let ordUi = { search:'', statusFilter:'', paymentFilter:'', paymentMethodFilter:'', carrierFilter:'' };
@@ -278,8 +278,8 @@ async function sheetsApiFetch(method, body, range){
 // Mỗi ô chỉ chứa tối đa ~45.000 ký tự (an toàn dưới giới hạn 50.000 của Google Sheets).
 // Dữ liệu được chia nhỏ và ghi vào nhiều ô liên tiếp trong cột A, chia theo khối cố định cho từng loại dữ liệu.
 const CHUNK_SIZE = 45000;
-const SHEET_BLOCKS = { products:{start:0, size:60}, orders:{start:60, size:120}, complaints:{start:180, size:40}, seq:{start:220, size:2} };
-const SHEET_TOTAL_ROWS = 222;
+const SHEET_BLOCKS = { products:{start:0, size:60}, orders:{start:60, size:120}, complaints:{start:180, size:40}, seq:{start:220, size:2}, incomingStock:{start:222, size:12} };
+const SHEET_TOTAL_ROWS = 234;
 function chunkString(str, size){
   const chunks = [];
   for(let i=0;i<str.length;i+=size) chunks.push(str.slice(i,i+size));
@@ -302,6 +302,7 @@ async function loadDBFromSheet(){
         if(legacy && Array.isArray(legacy.products) && Array.isArray(legacy.orders)){
           DB.products = legacy.products; DB.orders = legacy.orders;
           DB.complaints = legacy.complaints||[]; DB.seq = legacy.seq||{product:0, order:0, complaint:0};
+          DB.incomingStock = legacy.incomingStock||[];
           await saveDBToSheet(); // ghi lại theo định dạng mới
           return;
         }
@@ -315,10 +316,12 @@ async function loadDBFromSheet(){
     const ordersStr = readBlock('orders');
     const complaintsStr = readBlock('complaints');
     const seqStr = readBlock('seq');
+    const incomingStr = readBlock('incomingStock');
     DB.products = productsStr? JSON.parse(productsStr) : [];
     DB.orders = ordersStr? JSON.parse(ordersStr) : [];
     DB.complaints = complaintsStr? JSON.parse(complaintsStr) : [];
     DB.seq = seqStr? JSON.parse(seqStr) : {product:0, order:0, complaint:0};
+    DB.incomingStock = incomingStr? JSON.parse(incomingStr) : [];
   }catch(e){
     console.error(e);
     alert('Không đọc được dữ liệu từ Google Sheet. Kiểm tra: Spreadsheet ID đúng chưa, tab tên "Data" đã tạo chưa, tài khoản đã được chia sẻ quyền Editor chưa.\n\nChi tiết: '+e.message);
@@ -339,6 +342,7 @@ async function saveDBToSheet(){
     writeBlock('orders', JSON.stringify(DB.orders));
     writeBlock('complaints', JSON.stringify(DB.complaints));
     writeBlock('seq', JSON.stringify(DB.seq));
+    writeBlock('incomingStock', JSON.stringify(DB.incomingStock||[]));
     await sheetsApiFetch('PUT', { values }, `Data!A1:A${SHEET_TOTAL_ROWS}`);
   }catch(e){
     console.error(e);
@@ -361,6 +365,7 @@ function genCode(prefix, key, pad=4){
 }
 function fmt(n){ return (Math.round(n||0)).toLocaleString('vi-VN')+'đ'; }
 function fmtDate(d){ if(!d) return '—'; const x=new Date(d); return x.toLocaleDateString('vi-VN')+' '+x.toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDateOnly(d){ if(!d) return '—'; const p=String(d).split('-'); return p.length===3? `${p[2]}/${p[1]}/${p[0]}` : d; }
 /* ---- Sắp xếp bảng dùng chung ---- */
 function toggleSort(state, key){
   if(state.key===key) state.dir = -state.dir; else { state.key = key; state.dir = 1; }
@@ -794,10 +799,13 @@ function renderInventory(){
       <span class="muted small" id="invCount"></span>
     </div>
     <div id="invResults"></div>
+    <div class="section-title">📦 Hàng chờ về <span class="hint">Khi hàng về, bấm "Đã về hàng" để tự cộng vào kho</span></div>
+    <div id="invIncoming"></div>
     <div class="section-title">Tổng hợp nhu cầu Preorder theo sản phẩm <span class="hint">Chỉ tính đơn đặt trước đang "Chờ hàng"</span></div>
     <div id="invPreorderNeeds"></div>
   `;
   renderInventoryResults();
+  renderIncomingStock();
 }
 let invSort = {key:'code', dir:1};
 function invSortVal(p, key){
@@ -845,6 +853,7 @@ function renderInventoryResults(){
         <td><button class="btn btn-ghost btn-sm" onclick="openHistoryModal('${p.id}')">Xem (${p.history.length})</button></td>
         <td style="white-space:nowrap">
           <button class="btn btn-secondary btn-sm" onclick="openImportModal('${p.id}')">Nhập</button>
+          <button class="btn btn-secondary btn-sm" onclick="openStockAdjustModal('${p.id}')">Sửa số lượng</button>
           <button class="btn btn-secondary btn-sm" onclick="openCopyProductModal('${p.id}')">Copy</button>
           <button class="btn btn-secondary btn-sm" onclick="openProductModal('${p.id}')">Sửa</button>
           <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')">Xóa</button>
@@ -1045,12 +1054,142 @@ function doBatchImport(){
   const readyAfter = Object.values(getPreorderReadiness()).filter(Boolean).length;
   if(readyAfter>readyBefore) alert('✅ Đã nhập kho. Hiện có '+readyAfter+' đơn đặt trước đủ hàng — có thể chuyển sang xác nhận ở tab Đơn hàng.');
 }
+
+/* ---- Sửa số lượng tồn kho (khi nhập sai số lượng hàng về trước đó) ---- */
+function openStockAdjustModal(productId){
+  const p = DB.products.find(x=>x.id===productId);
+  if(!p) return;
+  openModal(`
+    <div class="modal-head"><h3>Sửa số lượng tồn kho — ${p.name}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="hint" style="margin-bottom:10px">Dùng khi trước đó nhập sai số lượng hàng về. Nhập đúng số lượng tồn kho thực tế hiện có, hệ thống sẽ tự tính chênh lệch và ghi vào lịch sử.</div>
+      <div class="form-row"><label>Tồn kho hiện tại (theo hệ thống)</label><input value="${p.stock}" disabled></div>
+      <div class="form-row"><label>Số lượng đúng thực tế</label><input type="number" id="adjustQty" value="${p.stock}"></div>
+      <div class="form-row"><label>Lý do điều chỉnh (tuỳ chọn)</label><input id="adjustNote" placeholder="VD: nhập nhầm số lượng lô ngày 20/07"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveStockAdjust('${p.id}')">Lưu điều chỉnh</button></div>
+  `, true);
+}
+function saveStockAdjust(productId){
+  const p = DB.products.find(x=>x.id===productId);
+  if(!p) return;
+  const newQty = Number(document.getElementById('adjustQty').value);
+  if(isNaN(newQty) || newQty<0){ alert('Số lượng không hợp lệ'); return; }
+  const note = document.getElementById('adjustNote').value.trim();
+  const diff = newQty - p.stock;
+  if(diff===0){ closeModal(); return; }
+  p.stock = newQty;
+  p.history.push({date:todayISO(), qty:diff, price:0, type:'adjust', note: note||'Điều chỉnh số lượng tồn kho'});
+  saveDB(); closeModal();
+  if(activeTab==='inventory') renderInventoryResults();
+  renderNav();
+}
+
+/* ---- Hàng chờ về: đặt hàng trước, khi về thì tự cộng vào kho ---- */
+function renderIncomingStock(){
+  const list = [...(DB.incomingStock||[])].sort((a,b)=> (a.expectedDate||'').localeCompare(b.expectedDate||''));
+  const el = document.getElementById('invIncoming');
+  if(!el) return;
+  el.innerHTML = `
+    <div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="openIncomingModal()">+ Thêm hàng chờ về</button></div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Sản phẩm</th><th>Số lượng</th><th>Ngày đặt</th><th>Ngày dự kiến về</th><th>Trạng thái</th><th>Thao tác</th>
+    </tr></thead><tbody>
+    ${list.length? list.map(r=>{
+      const p = DB.products.find(x=>x.id===r.productId);
+      const overdue = r.expectedDate && r.expectedDate < todayISO().slice(0,10);
+      return `<tr>
+        <td>${p? `<b>${p.code}</b> — ${p.name}` : '<span class="muted">Sản phẩm đã bị xóa</span>'}</td>
+        <td style="font-weight:700">${r.qty}</td>
+        <td>${fmtDateOnly(r.orderDate)}</td>
+        <td>${fmtDateOnly(r.expectedDate)}${overdue?' <span class="tag" style="background:var(--red-light,#FCE7EA);color:var(--red)">Trễ hẹn</span>':''}</td>
+        <td><span class="tag" style="background:var(--amber-light);color:#946417">Chờ về</span></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-primary btn-sm" onclick="receiveIncoming('${r.id}')" ${!p?'disabled':''}>✓ Đã về hàng</button>
+          <button class="btn btn-secondary btn-sm" onclick="openIncomingModal('${r.id}')">Sửa</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteIncoming('${r.id}')">Xóa</button>
+        </td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="6" class="empty">Chưa có hàng chờ về</td></tr>`}
+    </tbody></table></div>
+  `;
+}
+let incomingForm = null;
+function openIncomingModal(existingId){
+  const existing = existingId? (DB.incomingStock||[]).find(x=>x.id===existingId) : null;
+  incomingForm = existing? {...existing} : { id:null, productId:'', qty:1, orderDate: todayISO().slice(0,10), expectedDate:'', price:0 };
+  openModal(incomingFormHtml(), true);
+}
+function incomingFormHtml(){
+  const f = incomingForm;
+  return `
+    <div class="modal-head"><h3>${f.id? 'Sửa' : 'Thêm'} hàng chờ về</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="form-row"><label>Sản phẩm</label>
+        <select onchange="incomingForm.productId=this.value">
+          <option value="">-- Chọn sản phẩm --</option>
+          ${DB.products.map(p=>`<option value="${p.id}" ${f.productId===p.id?'selected':''}>${p.code} — ${p.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-2col">
+        <div class="form-row"><label>Số lượng</label><input type="number" min="1" value="${f.qty}" oninput="incomingForm.qty=Number(this.value)||0"></div>
+        <div class="form-row"><label>Giá nhập/đơn vị (tuỳ chọn)</label><input type="number" value="${f.price||''}" placeholder="Để trống nếu chưa rõ" oninput="incomingForm.price=Number(this.value)||0"></div>
+      </div>
+      <div class="form-2col">
+        <div class="form-row"><label>Ngày đặt</label><input type="date" value="${f.orderDate}" oninput="incomingForm.orderDate=this.value"></div>
+        <div class="form-row"><label>Ngày dự kiến về</label><input type="date" value="${f.expectedDate}" oninput="incomingForm.expectedDate=this.value"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveIncoming()">Lưu</button></div>
+  `;
+}
+function saveIncoming(){
+  const f = incomingForm;
+  if(!f.productId){ alert('Vui lòng chọn sản phẩm'); return; }
+  if(!f.qty || f.qty<=0){ alert('Vui lòng nhập số lượng hợp lệ'); return; }
+  DB.incomingStock = DB.incomingStock || [];
+  if(f.id){
+    const idx = DB.incomingStock.findIndex(x=>x.id===f.id);
+    if(idx>-1) DB.incomingStock[idx] = f;
+  } else {
+    f.id = uid();
+    DB.incomingStock.push(f);
+  }
+  saveDB(); closeModal(); incomingForm=null;
+  if(activeTab==='inventory') renderIncomingStock();
+}
+function deleteIncoming(id){
+  if(!confirm('Xóa mục hàng chờ về này?')) return;
+  DB.incomingStock = (DB.incomingStock||[]).filter(x=>x.id!==id);
+  saveDB(); renderIncomingStock();
+}
+function receiveIncoming(id){
+  const r = (DB.incomingStock||[]).find(x=>x.id===id);
+  if(!r) return;
+  const p = DB.products.find(x=>x.id===r.productId);
+  if(!p){ alert('Sản phẩm không còn tồn tại.'); return; }
+  if(!confirm(`Xác nhận đã nhận ${r.qty} sản phẩm "${p.name}"? Số lượng sẽ được tự động cộng vào tồn kho.`)) return;
+  const oldStockValue = p.stock * p.importPrice;
+  const newStock = p.stock + r.qty;
+  const addedValue = (r.price||0) * r.qty;
+  p.importPrice = (r.price && newStock>0) ? Math.round((oldStockValue + addedValue)/newStock) : p.importPrice;
+  p.stock = newStock;
+  p.history.push({date:todayISO(), qty:r.qty, price:r.price||0, type:'incoming', note:'Nhận hàng chờ về'});
+  DB.incomingStock = DB.incomingStock.filter(x=>x.id!==id);
+  saveDB();
+  if(activeTab==='inventory'){ renderInventoryResults(); renderIncomingStock(); }
+  renderNav();
+}
 function openHistoryModal(productId){
   const p = DB.products.find(x=>x.id===productId);
   openModal(`
     <div class="modal-head"><h3>Lịch sử nhập hàng — ${p.name}</h3><button class="close-x" onclick="closeModal()">✕</button></div>
     <div class="modal-body"><div class="hist-list">
-      ${p.history.length? [...p.history].reverse().map(h=>`<div class="hist-item"><span>${fmtDate(h.date)}</span><span>+${h.qty} sp</span><span class="muted">${fmt(h.price)}/sp</span></div>`).join('') : `<div class="empty">Chưa có lịch sử nhập</div>`}
+      ${p.history.length? [...p.history].reverse().map(h=>{
+        const label = h.type==='adjust' ? '⚙ Điều chỉnh' : h.type==='incoming' ? '📦 Hàng chờ về' : '';
+        const sign = h.qty>=0 ? '+' : '';
+        return `<div class="hist-item"><span>${fmtDate(h.date)}${label?' · '+label:''}</span><span>${sign}${h.qty} sp</span><span class="muted">${h.price?fmt(h.price)+'/sp':(h.note||'')}</span></div>`;
+      }).join('') : `<div class="empty">Chưa có lịch sử nhập</div>`}
     </div></div>
     <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Đóng</button></div>
   `);
