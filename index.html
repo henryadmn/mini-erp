@@ -1199,10 +1199,8 @@ function renderOrders(){
         ${Object.entries(CARRIERS).map(([k,v])=>`<option value="${k}" ${ordUi.carrierFilter===k?'selected':''}>${v}</option>`).join('')}
       </select>
       ${(ordUi.statusFilter||ordUi.paymentFilter||ordUi.paymentMethodFilter||ordUi.carrierFilter)? `<button class="btn btn-secondary btn-sm" onclick="ordUi.statusFilter='';ordUi.paymentFilter='';ordUi.paymentMethodFilter='';ordUi.carrierFilter=''; renderOrders()">✕ Xóa lọc</button>`:''}
-      <button class="btn btn-secondary" onclick="exportCarrierExcel('viettel_post')">⬇ Excel Viettel Post</button>
-      <button class="btn btn-secondary" onclick="exportCarrierExcel('shopee_express')">⬇ Excel Shopee Express</button>
       <button class="btn btn-primary" onclick="exportPackingSlipWord()">🖨 Phiếu đóng gói (Word)</button>
-      <button class="btn btn-secondary" onclick="exportMassOrderExcel()">⬇ File tạo đơn hàng loạt (Excel)</button>
+      <button class="btn btn-secondary" onclick="exportMassOrderExcel()">⬇ Tạo đơn SPX - Excel</button>
       <button class="btn btn-secondary" onclick="bulkGuessOrdersAdmin()">🔍 Đoán Tỉnh/Quận/Xã cho đơn cũ</button>
       <span class="muted small" id="ordCount"></span>
     </div>
@@ -2035,20 +2033,6 @@ function setRepPreset(kind){
 }
 
 /* ======================= EXPORTS ======================= */
-function exportCarrierExcel(carrier){
-  const orders = DB.orders.filter(o=>o.carrier===carrier && o.status!=='huy' && o.status!=='nhap');
-  if(orders.length===0){ alert('Không có đơn hàng phù hợp để xuất cho '+CARRIERS[carrier]); return; }
-  const rows = orders.map(o=>({
-    'Mã đơn hàng': o.code, 'Tên người nhận': o.customerName, 'Số điện thoại': o.phone, 'Địa chỉ chi tiết': o.address,
-    'Sản phẩm': o.items.map(i=>i.name+' x'+i.qty).join(', '), 'Số lượng': o.items.reduce((s,i)=>s+i.qty,0),
-    'Giá trị hàng (COD)': o.paymentMethod==='cod' ? orderTotal(o) : 0, 'Phí ship': o.shipFee,
-    'Mã vận đơn': o.trackingCode||'', 'Ghi chú': o.note||'',
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'DonHang');
-  XLSX.writeFile(wb, `don-hang-${carrier}-${new Date().toISOString().slice(0,10)}.xlsx`);
-}
 function orderPackingSlipTableHtml(o){
   const items = (o.items && o.items.length) ? o.items : [{name:'—', qty:''}];
   const fullAddr = fullAddressOf(o);
@@ -2103,11 +2087,12 @@ function exportMassOrderExcel(){
   const ws = wb.Sheets['Tạo đơn'];
   if(!ws){ alert('Không tìm thấy sheet "Tạo đơn" trong file mẫu.'); return; }
 
-  // Lấy sẵn định dạng (number format + style) mẫu của từng cột từ hàng 2 để áp lại cho MỌI dòng dữ liệu
+  // Lấy sẵn định dạng (number format + style) mẫu của từng cột từ hàng 2 để áp lại cho MỌI dòng dữ liệu.
+  // Với cột kiểu chuỗi (SĐT, mã đơn...) LUÔN ép định dạng Text ("@") để không bị mất số 0 đứng đầu.
   const colFmt = {};
   Object.keys(MASS_ORDER_COL_TYPES).forEach(col=>{
     const tmpl = ws[col+'2'] || {};
-    colFmt[col] = { z: tmpl.z, s: tmpl.s };
+    colFmt[col] = { z: MASS_ORDER_COL_TYPES[col]==='s' ? '@' : tmpl.z, s: tmpl.s };
   });
   function setCell(col, r, value){
     if(value===undefined || value===null || value==='') return; // để trống thì giữ nguyên ô mẫu, không ghi đè
@@ -2132,7 +2117,10 @@ function exportMassOrderExcel(){
     setCell('E', r, o.district);
     setCell('F', r, o.ward);
     setCell('G', r, o.address);
-    setCell('J', r, o.code);
+    const productLines = [o.code, ...o.items.map(it=>`${it.name}x${it.qty}`)].join('\n');
+    setCell('J', r, productLines);
+    setCell('K', r, 1);
+    setCell('V', r, 'N');
     setCell('M', r, weight);
     setCell('R', r, orderValue);
     setCell('S', r, 'N');
