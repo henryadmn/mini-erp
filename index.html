@@ -822,11 +822,13 @@ function renderInventoryResults(){
     && cfMatches('inv','value',p.stock*p.importPrice)
   );
   list.sort((a,b)=> cmpVals(invSortVal(a,invSort.key), invSortVal(b,invSort.key)) * invSort.dir);
+  inv.filteredList = list;
   document.getElementById('invCount').textContent = list.length+' sản phẩm'+(cfActiveCount('inv')? ' (đã lọc)':'');
   const totalInvValue = DB.products.reduce((s,p)=>s+p.stock*p.importPrice,0);
   document.getElementById('invResults').innerHTML = `
     <div class="card" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <span class="muted small">Tổng giá trị tồn kho toàn bộ</span><b style="font-size:17px;color:var(--teal)">${fmt(totalInvValue)}</b>
+      <button class="btn btn-secondary btn-sm" onclick="exportInventoryExcel()">⬇ Xuất Excel kho hàng tồn</button>
       ${cfActiveCount('inv')? `<button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('inv','renderInventoryResults')">✕ Xóa tất cả bộ lọc cột</button>`:''}
     </div>
     <div class="table-wrap"><table><thead><tr>
@@ -869,11 +871,15 @@ function computePreorderNeeds(){
   DB.orders.filter(o=>o.type==='preorder' && o.status==='cho_hang').forEach(o=>{
     o.items.forEach(it=>{ map[it.productId] = (map[it.productId]||0) + Number(it.qty); });
   });
+  const incomingMap = {};
+  (DB.incomingStock||[]).forEach(r=>{ incomingMap[r.productId] = (incomingMap[r.productId]||0) + Number(r.qty); });
   return Object.keys(map).map(pid=>{
     const p = DB.products.find(x=>x.id===pid);
     if(!p) return null;
     const diff = p.stock - map[pid];
-    return {code:p.code, name:p.name, stock:p.stock, needed:map[pid], diff};
+    const incoming = incomingMap[pid]||0;
+    const diffAfterIncoming = diff + incoming;
+    return {code:p.code, name:p.name, stock:p.stock, needed:map[pid], diff, incoming, diffAfterIncoming};
   }).filter(Boolean);
 }
 function stockDiffStatus(diff){
@@ -897,6 +903,7 @@ function renderPreorderNeeds(){
     && cfMatches('pre','stock',r.stock)
     && cfMatches('pre','needed',r.needed)
     && cfMatches('pre','diff',r.diff)
+    && cfMatches('pre','diffAfterIncoming',r.diffAfterIncoming)
     && cfMatches('pre','status',stockDiffStatus(r.diff).key)
   );
   needs.sort((a,b)=> cmpVals(preorderNeedsSortVal(a,preorderNeedsSort.key), preorderNeedsSortVal(b,preorderNeedsSort.key)) * preorderNeedsSort.dir);
@@ -911,9 +918,10 @@ function renderPreorderNeeds(){
       ${cfHeader('pre','stock','Tồn kho hiện tại',preorderNeedsSort,"toggleSort(preorderNeedsSort,'stock'); renderPreorderNeeds()",allNeeds,r=>r.stock,null,'renderPreorderNeeds')}
       ${cfHeader('pre','needed','Tổng SL đặt trước',preorderNeedsSort,"toggleSort(preorderNeedsSort,'needed'); renderPreorderNeeds()",allNeeds,r=>r.needed,null,'renderPreorderNeeds')}
       ${cfHeader('pre','diff','Chênh lệch tồn kho',preorderNeedsSort,"toggleSort(preorderNeedsSort,'diff'); renderPreorderNeeds()",allNeeds,r=>r.diff,null,'renderPreorderNeeds')}
+      ${cfHeader('pre','diffAfterIncoming','Chênh lệch sau khi hàng chờ về',preorderNeedsSort,"toggleSort(preorderNeedsSort,'diffAfterIncoming'); renderPreorderNeeds()",allNeeds,r=>r.diffAfterIncoming,null,'renderPreorderNeeds')}
       ${cfHeader('pre','status','Trạng thái tồn kho',preorderNeedsSort,"toggleSort(preorderNeedsSort,'status'); renderPreorderNeeds()",allNeeds,r=>stockDiffStatus(r.diff).key,(r,raw)=>STOCK_DIFF_LABELS[raw],'renderPreorderNeeds')}
     </tr></thead><tbody>
-    ${needs.length? needs.map(r=>{ const st = stockDiffStatus(r.diff); return `<tr><td>${r.code}</td><td>${r.name}</td><td>${r.stock}</td><td>${r.needed}</td><td style="font-weight:800">${r.diff>0?'+':''}${r.diff}</td><td>${st.dot} ${st.label}</td></tr>`; }).join('') : `<tr><td colspan="6" class="empty">${allNeeds.length? 'Không có dòng nào khớp bộ lọc đang chọn' : 'Chưa có nhu cầu preorder nào'}</td></tr>`}
+    ${needs.length? needs.map(r=>{ const st = stockDiffStatus(r.diff); return `<tr><td>${r.code}</td><td>${r.name}</td><td>${r.stock}</td><td>${r.needed}</td><td style="font-weight:800">${r.diff>0?'+':''}${r.diff}</td><td style="font-weight:800;${r.diffAfterIncoming<0?'color:var(--red)':'color:var(--green)'}">${r.diffAfterIncoming>0?'+':''}${r.diffAfterIncoming}${r.incoming?` <span class="muted small">(đang chờ về ${r.incoming})</span>`:''}</td><td>${st.dot} ${st.label}</td></tr>`; }).join('') : `<tr><td colspan="7" class="empty">${allNeeds.length? 'Không có dòng nào khớp bộ lọc đang chọn' : 'Chưa có nhu cầu preorder nào'}</td></tr>`}
     </tbody></table></div>
   `;
   afterColFilterRender();
@@ -1086,20 +1094,49 @@ function saveStockAdjust(productId){
 }
 
 /* ---- Hàng chờ về: đặt hàng trước, khi về thì tự cộng vào kho ---- */
+let incUi = { filteredList: [] };
+let incSort = { key:'expectedDate', dir:1 };
+function incSortVal(r, key){
+  const p = DB.products.find(x=>x.id===r.productId);
+  if(key==='code') return p?p.code:'';
+  if(key==='name') return p?p.name:'';
+  return r[key];
+}
 function renderIncomingStock(){
-  const list = [...(DB.incomingStock||[])].sort((a,b)=> (a.expectedDate||'').localeCompare(b.expectedDate||''));
+  const searchList = DB.incomingStock||[];
+  const list = searchList.filter(r=>{
+    const p = DB.products.find(x=>x.id===r.productId);
+    return cfMatches('inc','code', p?p.code:'')
+      && cfMatches('inc','name', p?p.name:'')
+      && cfMatches('inc','qty', r.qty)
+      && cfMatches('inc','orderDate', r.orderDate)
+      && cfMatches('inc','expectedDate', r.expectedDate);
+  });
+  list.sort((a,b)=> cmpVals(incSortVal(a,incSort.key), incSortVal(b,incSort.key)) * incSort.dir);
+  incUi.filteredList = list;
   const el = document.getElementById('invIncoming');
   if(!el) return;
   el.innerHTML = `
-    <div style="margin-bottom:8px"><button class="btn btn-secondary btn-sm" onclick="openIncomingModal()">+ Thêm hàng chờ về</button></div>
+    <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-secondary btn-sm" onclick="openIncomingModal()">+ Thêm hàng chờ về</button>
+      ${cfActiveCount('inc')? `<button class="btn btn-secondary btn-sm" onclick="cfClearAllForTable('inc','renderIncomingStock')">✕ Xóa tất cả bộ lọc cột</button>`:''}
+      ${searchList.length? `<button class="btn btn-secondary" onclick="exportIncomingExcel()">⬇ Xuất Excel hàng chờ về</button>`:''}
+      <span class="muted small">${list.length} lô</span>
+    </div>
     <div class="table-wrap"><table><thead><tr>
-      <th>Sản phẩm</th><th>Số lượng</th><th>Ngày đặt</th><th>Ngày dự kiến về</th><th>Trạng thái</th><th>Thao tác</th>
+      ${cfHeader('inc','code','Mã SP',incSort,"toggleSort(incSort,'code'); renderIncomingStock()",searchList,r=>{const p=DB.products.find(x=>x.id===r.productId);return p?p.code:'';},null,'renderIncomingStock')}
+      ${cfHeader('inc','name','Tên sản phẩm',incSort,"toggleSort(incSort,'name'); renderIncomingStock()",searchList,r=>{const p=DB.products.find(x=>x.id===r.productId);return p?p.name:'';},null,'renderIncomingStock')}
+      ${cfHeader('inc','qty','Số lượng',incSort,"toggleSort(incSort,'qty'); renderIncomingStock()",searchList,r=>r.qty,null,'renderIncomingStock')}
+      ${cfHeader('inc','orderDate','Ngày đặt',incSort,"toggleSort(incSort,'orderDate'); renderIncomingStock()",searchList,r=>r.orderDate,(r,raw)=>fmtDateOnly(raw),'renderIncomingStock')}
+      ${cfHeader('inc','expectedDate','Ngày dự kiến về',incSort,"toggleSort(incSort,'expectedDate'); renderIncomingStock()",searchList,r=>r.expectedDate,(r,raw)=>fmtDateOnly(raw),'renderIncomingStock')}
+      <th>Trạng thái</th><th>Thao tác</th>
     </tr></thead><tbody>
     ${list.length? list.map(r=>{
       const p = DB.products.find(x=>x.id===r.productId);
       const overdue = r.expectedDate && r.expectedDate < todayISO().slice(0,10);
       return `<tr>
-        <td>${p? `<b>${p.code}</b> — ${p.name}` : '<span class="muted">Sản phẩm đã bị xóa</span>'}</td>
+        <td><b>${p?p.code:'—'}</b></td>
+        <td>${p? p.name : '<span class="muted">Sản phẩm đã bị xóa</span>'}</td>
         <td style="font-weight:700">${r.qty}</td>
         <td>${fmtDateOnly(r.orderDate)}</td>
         <td>${fmtDateOnly(r.expectedDate)}${overdue?' <span class="tag" style="background:var(--red-light,#FCE7EA);color:var(--red)">Trễ hẹn</span>':''}</td>
@@ -1110,50 +1147,90 @@ function renderIncomingStock(){
           <button class="btn btn-danger btn-sm" onclick="deleteIncoming('${r.id}')">Xóa</button>
         </td>
       </tr>`;
-    }).join('') : `<tr><td colspan="6" class="empty">Chưa có hàng chờ về</td></tr>`}
+    }).join('') : `<tr><td colspan="7" class="empty">${searchList.length?'Không có dòng nào khớp bộ lọc':'Chưa có hàng chờ về'}</td></tr>`}
     </tbody></table></div>
   `;
+  afterColFilterRender();
 }
 let incomingForm = null;
 function openIncomingModal(existingId){
-  const existing = existingId? (DB.incomingStock||[]).find(x=>x.id===existingId) : null;
-  incomingForm = existing? {...existing} : { id:null, productId:'', qty:1, orderDate: todayISO().slice(0,10), expectedDate:'', price:0 };
+  if(existingId){
+    const existing = (DB.incomingStock||[]).find(x=>x.id===existingId);
+    incomingForm = { mode:'single', ...existing };
+  } else {
+    // Tạo mới: 1 lô có thể gồm nhiều sản phẩm, chỉ cần bấm 1 lần "Thêm hàng chờ về"
+    incomingForm = { mode:'batch', orderDate: todayISO().slice(0,10), expectedDate:'',
+      rows:[{productId:'', qty:1, price:0}] };
+  }
   openModal(incomingFormHtml(), true);
 }
 function incomingFormHtml(){
   const f = incomingForm;
+  if(f.mode==='single'){
+    return `
+      <div class="modal-head"><h3>Sửa hàng chờ về</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="form-row"><label>Sản phẩm</label>
+          <select onchange="incomingForm.productId=this.value">
+            <option value="">-- Chọn sản phẩm --</option>
+            ${DB.products.map(p=>`<option value="${p.id}" ${f.productId===p.id?'selected':''}>${p.code} — ${p.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-2col">
+          <div class="form-row"><label>Số lượng</label><input type="number" min="1" value="${f.qty}" oninput="incomingForm.qty=Number(this.value)||0"></div>
+          <div class="form-row"><label>Giá nhập/đơn vị (tuỳ chọn)</label><input type="number" value="${f.price||''}" placeholder="Để trống nếu chưa rõ" oninput="incomingForm.price=Number(this.value)||0"></div>
+        </div>
+        <div class="form-2col">
+          <div class="form-row"><label>Ngày đặt</label><input type="date" value="${f.orderDate}" oninput="incomingForm.orderDate=this.value"></div>
+          <div class="form-row"><label>Ngày dự kiến về</label><input type="date" value="${f.expectedDate}" oninput="incomingForm.expectedDate=this.value"></div>
+        </div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveIncoming()">Lưu</button></div>
+    `;
+  }
+  // mode 'batch': 1 lô gồm nhiều sản phẩm, ngày đặt/dự kiến về dùng chung cho cả lô
   return `
-    <div class="modal-head"><h3>${f.id? 'Sửa' : 'Thêm'} hàng chờ về</h3><button class="close-x" onclick="closeModal()">✕</button></div>
+    <div class="modal-head"><h3>Thêm hàng chờ về — 1 lô có thể gồm nhiều sản phẩm</h3><button class="close-x" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
-      <div class="form-row"><label>Sản phẩm</label>
-        <select onchange="incomingForm.productId=this.value">
-          <option value="">-- Chọn sản phẩm --</option>
-          ${DB.products.map(p=>`<option value="${p.id}" ${f.productId===p.id?'selected':''}>${p.code} — ${p.name}</option>`).join('')}
-        </select>
-      </div>
       <div class="form-2col">
-        <div class="form-row"><label>Số lượng</label><input type="number" min="1" value="${f.qty}" oninput="incomingForm.qty=Number(this.value)||0"></div>
-        <div class="form-row"><label>Giá nhập/đơn vị (tuỳ chọn)</label><input type="number" value="${f.price||''}" placeholder="Để trống nếu chưa rõ" oninput="incomingForm.price=Number(this.value)||0"></div>
+        <div class="form-row"><label>Ngày đặt (chung cho cả lô)</label><input type="date" value="${f.orderDate}" oninput="incomingForm.orderDate=this.value"></div>
+        <div class="form-row"><label>Ngày dự kiến về (chung cho cả lô)</label><input type="date" value="${f.expectedDate}" oninput="incomingForm.expectedDate=this.value"></div>
       </div>
-      <div class="form-2col">
-        <div class="form-row"><label>Ngày đặt</label><input type="date" value="${f.orderDate}" oninput="incomingForm.orderDate=this.value"></div>
-        <div class="form-row"><label>Ngày dự kiến về</label><input type="date" value="${f.expectedDate}" oninput="incomingForm.expectedDate=this.value"></div>
+      <div class="hint" style="margin:6px 0 10px">Thêm từng dòng sản phẩm + số lượng trong lô này, không cần lặp lại thao tác "Thêm hàng chờ về" cho mỗi sản phẩm.</div>
+      <div id="incomingRows">
+      ${f.rows.map((r,idx)=>`
+        <div class="item-row">
+          <div><select onchange="incomingForm.rows[${idx}].productId=this.value">
+            <option value="">-- Chọn sản phẩm --</option>
+            ${DB.products.map(p=>`<option value="${p.id}" ${r.productId===p.id?'selected':''}>${p.code} — ${p.name}</option>`).join('')}
+          </select></div>
+          <div><input type="number" min="1" placeholder="Số lượng" value="${r.qty||''}" oninput="incomingForm.rows[${idx}].qty=Number(this.value)||0"></div>
+          <div><input type="number" placeholder="Giá nhập/đv (tuỳ chọn)" value="${r.price||''}" oninput="incomingForm.rows[${idx}].price=Number(this.value)||0"></div>
+          <div>${f.rows.length>1?`<button class="rm-item" onclick="incomingForm.rows.splice(${idx},1); refreshIncomingForm()">✕</button>`:''}</div>
+        </div>`).join('')}
       </div>
+      <button class="btn btn-secondary btn-sm" onclick="incomingForm.rows.push({productId:'',qty:1,price:0}); refreshIncomingForm()">+ Thêm dòng sản phẩm</button>
     </div>
-    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveIncoming()">Lưu</button></div>
+    <div class="modal-foot"><button class="btn btn-secondary" onclick="closeModal()">Hủy</button><button class="btn btn-primary" onclick="saveIncoming()">Lưu cả lô</button></div>
   `;
 }
+function refreshIncomingForm(){ document.getElementById('modalRoot').querySelector('.modal').innerHTML = incomingFormHtml(); }
 function saveIncoming(){
   const f = incomingForm;
-  if(!f.productId){ alert('Vui lòng chọn sản phẩm'); return; }
-  if(!f.qty || f.qty<=0){ alert('Vui lòng nhập số lượng hợp lệ'); return; }
   DB.incomingStock = DB.incomingStock || [];
-  if(f.id){
+  if(f.mode==='single'){
+    if(!f.productId){ alert('Vui lòng chọn sản phẩm'); return; }
+    if(!f.qty || f.qty<=0){ alert('Vui lòng nhập số lượng hợp lệ'); return; }
     const idx = DB.incomingStock.findIndex(x=>x.id===f.id);
-    if(idx>-1) DB.incomingStock[idx] = f;
+    const {mode, ...rec} = f;
+    if(idx>-1) DB.incomingStock[idx] = rec;
   } else {
-    f.id = uid();
-    DB.incomingStock.push(f);
+    const validRows = f.rows.filter(r=>r.productId && r.qty>0);
+    if(!validRows.length){ alert('Vui lòng thêm ít nhất 1 sản phẩm với số lượng > 0'); return; }
+    const batchId = uid();
+    validRows.forEach(r=>{
+      DB.incomingStock.push({ id: uid(), batchId, productId:r.productId, qty:r.qty, price:r.price||0, orderDate:f.orderDate, expectedDate:f.expectedDate });
+    });
   }
   saveDB(); closeModal(); incomingForm=null;
   if(activeTab==='inventory') renderIncomingStock();
@@ -1179,6 +1256,19 @@ function receiveIncoming(id){
   saveDB();
   if(activeTab==='inventory'){ renderInventoryResults(); renderIncomingStock(); }
   renderNav();
+}
+function exportIncomingExcel(){
+  const list = incUi.filteredList && incUi.filteredList.length ? incUi.filteredList : (DB.incomingStock||[]);
+  if(!list.length){ alert('Không có hàng chờ về nào để xuất.'); return; }
+  const rows = list.map(r=>{
+    const p = DB.products.find(x=>x.id===r.productId);
+    return { 'Mã SP': p?p.code:'', 'Tên sản phẩm': p?p.name:'(đã xóa)', 'Số lượng': r.qty,
+      'Giá nhập/đơn vị': r.price||'', 'Ngày đặt': fmtDateOnly(r.orderDate), 'Ngày dự kiến về': fmtDateOnly(r.expectedDate), 'Trạng thái':'Chờ về' };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'HangChoVe');
+  XLSX.writeFile(wb, `hang-cho-ve-${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 function openHistoryModal(productId){
   const p = DB.products.find(x=>x.id===productId);
@@ -2319,8 +2409,20 @@ function exportPackingSlipWord(){
   const a = document.createElement('a'); a.href = url; a.download = `phieu-dong-goi-${today}.doc`;
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
+function exportInventoryExcel(){
+  const list = inv.filteredList && inv.filteredList.length ? inv.filteredList : DB.products;
+  if(!list.length){ alert('Không có sản phẩm nào để xuất.'); return; }
+  const rows = list.map(p=>({
+    'Mã SP': p.code, 'Tên sản phẩm': p.name, 'Giá nhập (TB)': p.importPrice,
+    'Tồn kho': p.stock, 'Tổng giá trị tồn kho': p.stock*p.importPrice,
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'KhoHang');
+  XLSX.writeFile(wb, `kho-hang-ton-${new Date().toISOString().slice(0,10)}.xlsx`);
+}
 function exportPreorderNeeds(){
-  const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Chênh lệch tồn kho':r.diff,'Trạng thái tồn kho':stockDiffStatus(r.diff).label}));
+  const rows = computePreorderNeeds().map(r=>({'Mã SP':r.code,'Tên sản phẩm':r.name,'Tồn kho hiện tại':r.stock,'Tổng SL đặt trước':r.needed,'Chênh lệch tồn kho':r.diff,'Đang chờ về':r.incoming,'Chênh lệch sau khi hàng chờ về':r.diffAfterIncoming,'Trạng thái tồn kho':stockDiffStatus(r.diff).label}));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'CanDatHang');
